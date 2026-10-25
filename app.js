@@ -320,8 +320,8 @@
       const rows=[...block.querySelectorAll(':scope > div:not(.rain-head):not(.rain-row)')];
       rows.forEach(row=>{
         const label=row.querySelector('b')?.textContent||'';
-        let value=row.querySelector('span')?.innerText?.replace(/\\s+/g,' ').trim()||'';
-        const pctMatch=value.match(/\\s+([\\d.,]+%)$/);
+        let value=row.querySelector('span')?.innerText?.replace(/\s+/g,' ').trim()||'';
+        const pctMatch=value.match(/\s+([\d.,]+%)$/);
         const pct=pctMatch?.[1]||'';
         if(pct)value=value.slice(0,-pctMatch[0].length).trim();
         ctx.fillStyle='#fff';ctx.fillRect(margin,y,width-margin*2,rowHeight);
