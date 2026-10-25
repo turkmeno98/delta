@@ -23,6 +23,7 @@
   let supabaseClient = null;
   let currentSession = null;
   let currentFarmId = null;
+  let currentFarmName = '';
   let saveTimer = null;
   let realtimeChannel = null;
   let authBusy = false;
@@ -267,7 +268,7 @@
     event.preventDefault(); if(!supabaseClient||!currentSession)return;
     const {data,error}=await supabaseClient.rpc('create_field_ops_farm',{p_name:$('farm-name').value.trim()});
     if(error){$('farm-message').textContent=authError(error);return;}
-    await openFarm(data);
+    await openFarm(data,$('farm-name').value.trim());
   });
   $('logout-button').addEventListener('click',()=>supabaseClient?.auth.signOut());
   $('report-button').addEventListener('click',()=>openReport());
@@ -300,53 +301,52 @@
     if(!content||!reportDate){toast('Выберите дату сводки');return;}
     const [year,month,day]=reportDate.split('-');
     const dateLabel=`${day}.${month}.${year}`;
-    const farmName=$('farm-caption')?.textContent?.trim()||'Сводка работ';
+    const divisionName=currentFarmName||'Подразделение';
     const campaignBlocks=[...content.querySelectorAll('.report-block:not(.rain-block)')];
     const rainBlock=content.querySelector('.rain-block');
     const rainRows=rainBlock?[...rainBlock.querySelectorAll('.rain-row')]:[];
-    const width=1100, margin=22, rowHeight=38;
+    const width=1100, margin=22, contentWidth=width-margin*2, rowHeight=38;
     const height=74+campaignBlocks.length*(42+rowHeight*4+34+14)+(rainBlock?42+38+rainRows.length*36+18:0);
     const canvas=document.createElement('canvas');
     canvas.width=width*2;canvas.height=height*2;
     const ctx=canvas.getContext('2d');
     if(!ctx){toast('Не удалось подготовить изображение');return;}
     ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);
-    const line=(y,x1=margin,x2=width-margin)=>{ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();};
     const cellText=(text,x,y,align='left',font='bold 18px "Times New Roman",serif')=>{ctx.fillStyle='#111';ctx.font=font;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(String(text||''),x,y);};
-    const header=(title,y,h=42)=>{ctx.fillStyle='#c9dcef';ctx.fillRect(margin,y,width-margin*2,h);ctx.strokeStyle='#222';ctx.strokeRect(margin,y,width-margin*2,h);cellText(title,width/2,y+h/2,'center','bold 20px "Times New Roman",serif');};
-    header(`${farmName} — ${dateLabel}`,0,34);
+    const header=(title,y,h=42)=>{ctx.fillStyle='#c9dcef';ctx.fillRect(margin,y,contentWidth,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(margin,y,contentWidth,h);cellText(title,width/2,y+h/2,'center','bold 20px "Times New Roman",serif');};
+    const cell=(text,x,y,w,h,align='center',font='bold 18px "Times New Roman",serif',fill='#fff')=>{ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);const tx=align==='left'?x+10:align==='right'?x+w-10:x+w/2;cellText(text,tx,y+h/2,align,font);};
+    header(`ОП "${divisionName}" — ${dateLabel}`,0,34);
     let y=44;
     campaignBlocks.forEach(block=>{
       const title=block.querySelector(':scope > h3')?.textContent||'Работы';
       header(title,y,42);y+=42;
       const rows=[...block.querySelectorAll(':scope > div:not(.rain-head):not(.rain-row)')];
+      const col1=contentWidth*.70,col2=contentWidth*.16,col3=contentWidth-col1-col2;
       rows.forEach(row=>{
         const label=row.querySelector('b')?.textContent||'';
         let value=row.querySelector('span')?.innerText?.replace(/\s+/g,' ').trim()||'';
         const pctMatch=value.match(/\s+([\d.,]+%)$/);
         const pct=pctMatch?.[1]||'';
         if(pct)value=value.slice(0,-pctMatch[0].length).trim();
-        ctx.fillStyle='#fff';ctx.fillRect(margin,y,width-margin*2,rowHeight);
-        line(y+rowHeight,margin,width-margin);
-        cellText(label,margin+10,y+rowHeight/2);
-        cellText(value,width-145,y+rowHeight/2,'right');
-        if(pct)cellText(pct,width-margin-10,y+rowHeight/2,'right');
+        cell(label,margin,y,col1,rowHeight,'left');
+        cell(value,margin+col1,y,col2,rowHeight,'center');
+        cell(pct,margin+col1+col2,y,col3,rowHeight,'center');
         y+=rowHeight;
       });
       const aggregates=block.querySelector(':scope > small')?.textContent||'';
-      ctx.fillStyle='#fff';ctx.fillRect(margin,y,width-margin*2,34);line(y,margin,width-margin);line(y+34,margin,width-margin);
-      cellText(aggregates,margin+10,y+17);y+=48;
+      cell(aggregates,margin,y,contentWidth,34,'left');y+=48;
     });
     if(rainBlock){
       header(rainBlock.querySelector(':scope > h3')?.textContent||'Осадки в виде дождя, мм',y,42);y+=42;
       const headers=[...rainBlock.querySelectorAll('.rain-head b')].map(el=>el.textContent);
-      const widths=[width*.46,width*.27,width*.27], starts=[margin,margin+width*.46,margin+width*.73];
-      ctx.fillStyle='#dce7f1';ctx.fillRect(margin,y,width-margin*2,38);
-      headers.forEach((label,i)=>{ctx.strokeStyle='#222';ctx.strokeRect(starts[i],y,widths[i],38);cellText(label,starts[i]+widths[i]/2,y+19,'center','bold 16px "Times New Roman",serif');});
+      const widths=[contentWidth*.46,contentWidth*.27,contentWidth-contentWidth*.73];
+      const starts=[margin,margin+widths[0],margin+widths[0]+widths[1]];
+      ctx.fillStyle='#dce7f1';
+      headers.forEach((label,i)=>cell(label,starts[i],y,widths[i],38,'center','bold 16px "Times New Roman",serif','#dce7f1'));
       y+=38;
       rainRows.forEach(row=>{
         const values=[...row.children].map(el=>el.textContent.trim());
-        values.forEach((value,i)=>{ctx.strokeStyle='#222';ctx.strokeRect(starts[i],y,widths[i],36);cellText(value,starts[i]+widths[i]/2,y+18,'center','bold 16px "Times New Roman",serif');});
+        values.forEach((value,i)=>cell(value,starts[i],y,widths[i],36,'center'));
         y+=36;
       });
     }
@@ -411,7 +411,7 @@
     finally{authBusy=false;}
   }
   async function openFarm(farmId,farmName=''){
-    currentFarmId=farmId;
+    currentFarmId=farmId;currentFarmName=farmName||currentFarmName||'';
     const [{data:rows,error:fieldsError},{data:settingsRow,error:settingsError},{data:campaignRows,error:campaignError},{data:shiftRows,error:shiftError},{data:rainRows,error:rainError}]=await Promise.all([
       supabaseClient.from('field_ops_fields').select('id,source_id,name,geometry,area,operations,color').eq('farm_id',farmId),
       supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',farmId).maybeSingle(),
