@@ -314,7 +314,7 @@
     ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);
     const cellText=(text,x,y,align='left',font='bold 16px "Times New Roman",serif')=>{ctx.fillStyle='#111';ctx.font=font;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(String(text||''),x,y);};
     const header=(title,y,h=42)=>{ctx.fillStyle='#c9dcef';ctx.fillRect(margin,y,contentWidth,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(margin,y,contentWidth,h);cellText(title,width/2,y+h/2,'center','bold 18px "Times New Roman",serif');};
-    const cell=(text,x,y,w,h,align='center',font='bold 18px "Times New Roman",serif',fill='#fff')=>{ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);const tx=align==='left'?x+10:align==='right'?x+w-10:x+w/2;cellText(text,tx,y+h/2,align,font);};
+    const cell=(text,x,y,w,h,align='center',font='bold 16px "Times New Roman",serif',fill='#fff')=>{ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);const tx=align==='left'?x+10:align==='right'?x+w-10:x+w/2;cellText(text,tx,y+h/2,align,font);};
     header(`ОП "${divisionName}" — ${dateLabel}`,0,34);
     let y=44;
     campaignBlocks.forEach(block=>{
@@ -343,7 +343,7 @@
       const starts=[margin,margin+widths[0],margin+widths[0]+widths[1]];
       ctx.fillStyle='#dce7f1';
       headers.forEach((label,i)=>cell(label,starts[i],y,widths[i],38,'center','bold 14px "Times New Roman",serif','#dce7f1'));
-      y+=36;
+      y+=38;
       rainRows.forEach(row=>{
         const values=[...row.children].map(el=>el.textContent.trim());
         values.forEach((value,i)=>cell(value,starts[i],y,widths[i],32,'center','bold 16px "Times New Roman",serif'));
