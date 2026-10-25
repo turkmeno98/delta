@@ -305,15 +305,15 @@
     const campaignBlocks=[...content.querySelectorAll('.report-block:not(.rain-block)')];
     const rainBlock=content.querySelector('.rain-block');
     const rainRows=rainBlock?[...rainBlock.querySelectorAll('.rain-row')]:[];
-    const width=1100, margin=22, contentWidth=width-margin*2, rowHeight=38;
-    const height=74+campaignBlocks.length*(42+rowHeight*4+34+14)+(rainBlock?42+38+rainRows.length*36+18:0);
+    const width=700, margin=14, contentWidth=width-margin*2, rowHeight=34;
+    const height=74+campaignBlocks.length*(42+rowHeight*4+34+14)+(rainBlock?42+38+rainRows.length*32+18:0);
     const canvas=document.createElement('canvas');
     canvas.width=width*2;canvas.height=height*2;
     const ctx=canvas.getContext('2d');
     if(!ctx){toast('Не удалось подготовить изображение');return;}
     ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);
-    const cellText=(text,x,y,align='left',font='bold 18px "Times New Roman",serif')=>{ctx.fillStyle='#111';ctx.font=font;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(String(text||''),x,y);};
-    const header=(title,y,h=42)=>{ctx.fillStyle='#c9dcef';ctx.fillRect(margin,y,contentWidth,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(margin,y,contentWidth,h);cellText(title,width/2,y+h/2,'center','bold 20px "Times New Roman",serif');};
+    const cellText=(text,x,y,align='left',font='bold 16px "Times New Roman",serif')=>{ctx.fillStyle='#111';ctx.font=font;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(String(text||''),x,y);};
+    const header=(title,y,h=42)=>{ctx.fillStyle='#c9dcef';ctx.fillRect(margin,y,contentWidth,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(margin,y,contentWidth,h);cellText(title,width/2,y+h/2,'center','bold 18px "Times New Roman",serif');};
     const cell=(text,x,y,w,h,align='center',font='bold 18px "Times New Roman",serif',fill='#fff')=>{ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.strokeRect(x,y,w,h);const tx=align==='left'?x+10:align==='right'?x+w-10:x+w/2;cellText(text,tx,y+h/2,align,font);};
     header(`ОП "${divisionName}" — ${dateLabel}`,0,34);
     let y=44;
@@ -321,7 +321,7 @@
       const title=block.querySelector(':scope > h3')?.textContent||'Работы';
       header(title,y,42);y+=42;
       const rows=[...block.querySelectorAll(':scope > div:not(.rain-head):not(.rain-row)')];
-      const col1=contentWidth*.70,col2=contentWidth*.16,col3=contentWidth-col1-col2;
+      const col1=contentWidth*.56,col2=contentWidth*.22,col3=contentWidth-col1-col2;
       rows.forEach(row=>{
         const label=row.querySelector('b')?.textContent||'';
         let value=row.querySelector('span')?.innerText?.replace(/\s+/g,' ').trim()||'';
@@ -342,12 +342,12 @@
       const widths=[contentWidth*.46,contentWidth*.27,contentWidth-contentWidth*.73];
       const starts=[margin,margin+widths[0],margin+widths[0]+widths[1]];
       ctx.fillStyle='#dce7f1';
-      headers.forEach((label,i)=>cell(label,starts[i],y,widths[i],38,'center','bold 16px "Times New Roman",serif','#dce7f1'));
-      y+=38;
+      headers.forEach((label,i)=>cell(label,starts[i],y,widths[i],38,'center','bold 14px "Times New Roman",serif','#dce7f1'));
+      y+=36;
       rainRows.forEach(row=>{
         const values=[...row.children].map(el=>el.textContent.trim());
-        values.forEach((value,i)=>cell(value,starts[i],y,widths[i],36,'center'));
-        y+=36;
+        values.forEach((value,i)=>cell(value,starts[i],y,widths[i],32,'center','bold 16px "Times New Roman",serif'));
+        y+=32;
       });
     }
     canvas.toBlob(blob=>{
