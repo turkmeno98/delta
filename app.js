@@ -2,6 +2,7 @@
   'use strict';
   const STORAGE_KEY = 'field-operations-v1';
   const DEFAULT_KINDS = ['Сев', 'Внесение удобрений', 'Опрыскивание', 'Обработка почвы', 'Уборка', 'Другая работа'];
+  const DEFAULT_TYPES = [{id:'other',name:'Другая работа'},{id:'seeding',name:'Сев'},{id:'chemical',name:'Химическая обработка'}];
   const COLORS = ['#76926d','#bc9b65','#8099aa','#ab887d','#8c86a7','#719b92','#bb826e','#8ea076'];
   const $ = (id) => document.getElementById(id);
   const map = L.map('map', { zoomControl: false }).setView([51.105, 44.55], 11);
@@ -19,8 +20,9 @@
   function loadState() {
     try {
       const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-      return { fields: Array.isArray(raw.fields) ? raw.fields : [], kinds: Array.isArray(raw.kinds) ? raw.kinds : [...DEFAULT_KINDS], importedAt: raw.importedAt || '' };
-    } catch { return { fields: [], kinds: [...DEFAULT_KINDS], importedAt: '' }; }
+      const customTypes=Array.isArray(raw.operationTypes) ? raw.operationTypes.filter(type=>type?.id&&!DEFAULT_TYPES.some(base=>base.id===type.id)) : [];
+      return { fields: Array.isArray(raw.fields) ? raw.fields : [], kinds: Array.isArray(raw.kinds) ? raw.kinds : [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES,...customTypes], importedAt: raw.importedAt || '' };
+    } catch { return { fields: [], kinds: [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES], importedAt: '' }; }
   }
   function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render(); }
   function uid() { return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
@@ -136,7 +138,8 @@
       }
       if(op.date) details.push(new Date(`${op.date}T12:00:00`).toLocaleDateString('ru-RU'));
       if(op.note) details.push(op.note);
-      return `<div class="operation-item"><div><strong>${escapeHtml(op.kind)}</strong><small>${escapeHtml(details.join(' · ') || 'Без дополнительных данных')}</small></div><span class="op-chip">${{planned:'План',active:'В работе',done:'Готово'}[op.status]}</span><button type="button" class="remove-op" data-op="${escapeHtml(op.id)}">Удалить</button></div>`;
+      const typeName=op.typeName||({other:'Другая работа',seeding:'Сев',chemical:'Химическая обработка'}[op.type]||'Другая работа');
+      return `<div class="operation-item"><div><strong>${escapeHtml(op.kind)}</strong><small class="operation-type-label">Тип: ${escapeHtml(typeName)}</small><small>${escapeHtml(details.join(' · ') || 'Без дополнительных данных')}</small></div><span class="op-chip">${{planned:'План',active:'В работе',done:'Готово'}[op.status]}</span><button type="button" class="remove-op" data-op="${escapeHtml(op.id)}">Удалить</button></div>`;
     }).join('');
     host.querySelectorAll('.remove-op').forEach(button=>button.addEventListener('click',()=>{field.operations=field.operations.filter(o=>o.id!==button.dataset.op);save();renderOperations(field);toast('Операция удалена');}));
   }
@@ -144,6 +147,11 @@
     const select=$('operation-kind'), previous=select.value;
     select.innerHTML=state.kinds.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
     if(state.kinds.includes(previous)) select.value=previous;
+  }
+  function updateOperationTypeOptions() {
+    const select=$('operation-type'), previous=select.value;
+    select.innerHTML=state.operationTypes.map(type=>`<option value="${escapeHtml(type.id)}">${escapeHtml(type.name)}</option>`).join('');
+    if(state.operationTypes.some(type=>type.id===previous)) select.value=previous;
   }
   function addChemicalRow(values={}) {
     const row=document.createElement('div'); row.className='chemical-product-row';
@@ -167,7 +175,7 @@
   $('status-filters').addEventListener('click',e=>{const btn=e.target.closest('[data-filter]');if(!btn)return;activeFilter=btn.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===btn));render();});
   $('field-name').addEventListener('input',()=>{const f=state.fields.find(x=>x.id===selectedId);if(!f)return;f.name=$('field-name').value.trim()||f.sourceId; $('dialog-title').textContent=f.name; const layer=layerById.get(f.id);if(layer)layer.setTooltipContent(escapeHtml(f.name)); save();});
   $('done-button').addEventListener('click',()=>{const f=state.fields.find(x=>x.id===selectedId);if(f){f.name=$('field-name').value.trim()||f.sourceId;save();} $('field-dialog').close();});
-  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();$('operation-form').reset();$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
+  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();updateOperationTypeOptions();$('operation-form').reset();$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
   $('operation-type').addEventListener('change',()=>{
     const type=$('operation-type').value;
     $('seed-fields').hidden=type!=='seeding'; $('chemical-fields').hidden=type!=='chemical';
@@ -181,10 +189,19 @@
     const crop=type==='seeding'?$('seed-crop').value.trim():'';
     const variety=type==='seeding'?$('seed-variety').value.trim():'';
     const amount=type==='seeding'?$('seed-amount').value:'';
-    field.operations.push({id:uid(),kind:$('operation-kind').value||'Работа',type,status:$('operation-status').value,date:$('operation-date').value,crop,variety,product:type==='seeding'?[crop,variety].filter(Boolean).join(' · '):'',amount,unit:type==='seeding'?'кг':'',products,note:$('operation-note').value.trim()});
+    const typeName=$('operation-type').selectedOptions[0]?.textContent||'Другая работа';
+    field.operations.push({id:uid(),kind:$('operation-kind').value||'Работа',type,typeName,status:$('operation-status').value,date:$('operation-date').value,crop,variety,product:type==='seeding'?[crop,variety].filter(Boolean).join(' · '):'',amount,unit:type==='seeding'?'кг':'',products,note:$('operation-note').value.trim()});
     save();renderOperations(field);$('operation-dialog').close();toast('Операция добавлена');
   });
   $('cancel-operation').addEventListener('click',()=>$('operation-dialog').close());
+  $('add-operation-type').addEventListener('click',()=>{$('new-type-name').value='';$('type-dialog').showModal();});
+  $('type-form').addEventListener('submit',e=>{
+    e.preventDefault(); const name=$('new-type-name').value.trim(); if(!name)return;
+    let type=state.operationTypes.find(item=>item.name.toLocaleLowerCase('ru')===name.toLocaleLowerCase('ru'));
+    if(!type){type={id:`custom-${uid()}`,name};state.operationTypes.push(type);save();}
+    updateOperationTypeOptions();$('operation-type').value=type.id;$('type-dialog').close();
+  });
+  $('cancel-type').addEventListener('click',()=>$('type-dialog').close());
   $('settings-button').addEventListener('click',()=>{renderKinds();$('kinds-dialog').showModal();});
   function renderKinds(){ $('kind-list').innerHTML=state.kinds.map((kind,index)=>`<div class="kind-row"><span>${escapeHtml(kind)}</span><button type="button" data-kind="${index}" aria-label="Удалить ${escapeHtml(kind)}">Удалить</button></div>`).join(''); $('kind-list').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{state.kinds.splice(Number(b.dataset.kind),1);save();renderKinds();})); }
   $('add-kind').addEventListener('click',()=>{renderKinds();$('kinds-dialog').showModal();$('operation-dialog').close();});
