@@ -271,6 +271,7 @@
   $('report-button').addEventListener('click',()=>openReport());
   $('close-report').addEventListener('click',()=>$('report-dialog').close());
   $('report-date').addEventListener('change',renderReport);
+  $('export-summary').addEventListener('click',exportSummaryImage);
   document.querySelectorAll('.report-tab').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('.report-tab').forEach(tab=>tab.classList.toggle('active',tab===button));$('summary-view').hidden=button.dataset.tab!=='summary';$('journal-view').hidden=button.dataset.tab!=='journal';renderReport();}));
   $('campaign-form').addEventListener('submit',event=>{event.preventDefault();const name=$('campaign-name').value.trim(),planArea=Number($('campaign-plan').value);if(!name||!Number.isFinite(planArea))return;const found=state.campaigns.find(item=>item.name.toLocaleLowerCase('ru')===name.toLocaleLowerCase('ru'));if(found)found.planArea=planArea;else state.campaigns.push({id:uid(),name,planArea});$('campaign-form').reset();save();renderReport();toast('План работы сохранён');});
   $('add-shift-field').addEventListener('click',()=>addShiftFieldRow());
@@ -291,6 +292,70 @@
 
   function productionDateDefault(){const d=new Date();d.setDate(d.getDate()-1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
   function openReport(){$('report-date').value=productionDateDefault();$('report-dialog').showModal();renderReport();}
+  function exportSummaryImage(){
+    const content=$('summary-content');
+    const reportDate=$('report-date').value;
+    if(!content||!reportDate){toast('Выберите дату сводки');return;}
+    const [year,month,day]=reportDate.split('-');
+    const dateLabel=`${day}.${month}.${year}`;
+    const farmName=$('farm-caption')?.textContent?.trim()||'Сводка работ';
+    const campaignBlocks=[...content.querySelectorAll('.report-block:not(.rain-block)')];
+    const rainBlock=content.querySelector('.rain-block');
+    const rainRows=rainBlock?[...rainBlock.querySelectorAll('.rain-row')]:[];
+    const width=1100, margin=22, rowHeight=38;
+    const height=74+campaignBlocks.length*(42+rowHeight*4+34+14)+(rainBlock?42+38+rainRows.length*36+18:0);
+    const canvas=document.createElement('canvas');
+    canvas.width=width*2;canvas.height=height*2;
+    const ctx=canvas.getContext('2d');
+    if(!ctx){toast('Не удалось подготовить изображение');return;}
+    ctx.scale(2,2);ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);
+    const line=(y,x1=margin,x2=width-margin)=>{ctx.strokeStyle='#222';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();};
+    const cellText=(text,x,y,align='left',font='bold 18px "Times New Roman",serif')=>{ctx.fillStyle='#111';ctx.font=font;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(String(text||''),x,y);};
+    const header=(title,y,h=42)=>{ctx.fillStyle='#c9dcef';ctx.fillRect(margin,y,width-margin*2,h);ctx.strokeStyle='#222';ctx.strokeRect(margin,y,width-margin*2,h);cellText(title,width/2,y+h/2,'center','bold 20px "Times New Roman",serif');};
+    header(`${farmName} — ${dateLabel}`,0,34);
+    let y=44;
+    campaignBlocks.forEach(block=>{
+      const title=block.querySelector(':scope > h3')?.textContent||'Работы';
+      header(title,y,42);y+=42;
+      const rows=[...block.querySelectorAll(':scope > div:not(.rain-head):not(.rain-row)')];
+      rows.forEach(row=>{
+        const label=row.querySelector('b')?.textContent||'';
+        let value=row.querySelector('span')?.innerText?.replace(/\\s+/g,' ').trim()||'';
+        const pctMatch=value.match(/\\s+([\\d.,]+%)$/);
+        const pct=pctMatch?.[1]||'';
+        if(pct)value=value.slice(0,-pctMatch[0].length).trim();
+        ctx.fillStyle='#fff';ctx.fillRect(margin,y,width-margin*2,rowHeight);
+        line(y+rowHeight,margin,width-margin);
+        cellText(label,margin+10,y+rowHeight/2);
+        cellText(value,width-145,y+rowHeight/2,'right');
+        if(pct)cellText(pct,width-margin-10,y+rowHeight/2,'right');
+        y+=rowHeight;
+      });
+      const aggregates=block.querySelector(':scope > small')?.textContent||'';
+      ctx.fillStyle='#fff';ctx.fillRect(margin,y,width-margin*2,34);line(y,margin,width-margin);line(y+34,margin,width-margin);
+      cellText(aggregates,margin+10,y+17);y+=48;
+    });
+    if(rainBlock){
+      header(rainBlock.querySelector(':scope > h3')?.textContent||'Осадки в виде дождя, мм',y,42);y+=42;
+      const headers=[...rainBlock.querySelectorAll('.rain-head b')].map(el=>el.textContent);
+      const widths=[width*.46,width*.27,width*.27], starts=[margin,margin+width*.46,margin+width*.73];
+      ctx.fillStyle='#dce7f1';ctx.fillRect(margin,y,width-margin*2,38);
+      headers.forEach((label,i)=>{ctx.strokeStyle='#222';ctx.strokeRect(starts[i],y,widths[i],38);cellText(label,starts[i]+widths[i]/2,y+19,'center','bold 16px "Times New Roman",serif');});
+      y+=38;
+      rainRows.forEach(row=>{
+        const values=[...row.children].map(el=>el.textContent.trim());
+        values.forEach((value,i)=>{ctx.strokeStyle='#222';ctx.strokeRect(starts[i],y,widths[i],36);cellText(value,starts[i]+widths[i]/2,y+18,'center','bold 16px "Times New Roman",serif');});
+        y+=36;
+      });
+    }
+    canvas.toBlob(blob=>{
+      if(!blob){toast('Не удалось создать PNG');return;}
+      const url=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=url;link.download=`сводка-${reportDate}.png`;link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      toast('Сводка сохранена как PNG');
+    },'image/png');
+  }
   function addShiftFieldRow(){const row=document.createElement('div');row.className='shift-field-row';row.innerHTML=`<select aria-label="Поле"><option value="">Выберите поле</option>${state.fields.map(field=>`<option value="${escapeHtml(field.id)}">${escapeHtml(field.name)} · ${Number(field.area||0).toFixed(1)} га</option>`).join('')}</select><input type="number" min="0.1" step="0.1" placeholder="га" aria-label="Гектары"><button type="button" aria-label="Убрать поле">×</button>`;row.querySelector('button').addEventListener('click',()=>row.remove());$('shift-fields').append(row);}
   function renderReport(){if(!$('report-date').value)return;const date=$('report-date').value,year=date.slice(0,4),today=state.shiftLogs.filter(log=>log.workDate===date),campaigns=state.campaigns;
     $('shift-campaign').innerHTML=campaigns.length?campaigns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join(''):'<option value="">Сначала добавьте план</option>';
