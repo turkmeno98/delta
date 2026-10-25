@@ -68,6 +68,25 @@
     const match=String(name||'').match(/\/\s*(\d+(?:[.,]\d+)?)/);
     return match ? Number(match[1].replace(',','.')) : 0;
   }
+  function mergeFieldsBySource(fields) {
+    const merged=new Map();
+    for(const field of fields){
+      const source=String(field.sourceId||field.source_id||'').trim().toLocaleLowerCase('ru');
+      const key=source?`source:${source}`:`id:${field.id}`;
+      const previous=merged.get(key);
+      if(!previous){merged.set(key,{...field,operations:Array.isArray(field.operations)?[...field.operations]:[]});continue;}
+      const seen=new Set(),operations=[];
+      for(const operation of [...(previous.operations||[]),...(Array.isArray(field.operations)?field.operations:[])]){
+        const operationKey=operation?.id?`id:${operation.id}`:`value:${JSON.stringify(operation)}`;
+        if(seen.has(operationKey))continue;
+        seen.add(operationKey);operations.push(operation);
+      }
+      previous.operations=operations;
+      if(!previous.geometry?.length&&field.geometry?.length)previous.geometry=field.geometry;
+      if(!previous.name&&field.name)previous.name=field.name;
+    }
+    return [...merged.values()];
+  }
   function parseCoordinates(text) {
     return (text || '').trim().split(/\s+/).map(pair => pair.split(',').slice(0,2).map(Number)).filter(p => p.length===2 && p.every(Number.isFinite));
   }
@@ -467,9 +486,8 @@
     state=local;
     if(rows?.length){
       const cloud=rows.map(row=>({...row,sourceId:row.source_id,area:areaHaFromName(row.name),operations:Array.isArray(row.operations)?row.operations:[]}));
-      const known=new Set(cloud.map(field=>field.id));
-      state.fields=[...cloud,...local.fields.filter(field=>!known.has(field.id))];
-    }else if(local.fields.length){state.fields=local.fields;}
+      state.fields=mergeFieldsBySource([...cloud,...local.fields]);
+    }else if(local.fields.length){state.fields=mergeFieldsBySource(local.fields);}
     if(settingsRow){state.kinds=settingsRow.kinds||[...DEFAULT_KINDS];state.operationTypes=settingsRow.operation_types||[...DEFAULT_TYPES];state.importedAt=settingsRow.imported_at||'';}
     state.campaigns=campaignRows.map(row=>({id:row.id,name:row.name,planArea:Number(row.plan_area)||0}));state.shiftLogs=shiftRows.map(row=>({id:row.id,workDate:row.work_date,shift:row.shift,campaignId:row.campaign_id,aggregateCount:Number(row.aggregate_count)||0,fields:Array.isArray(row.field_entries)?row.field_entries:[]}));state.rainfallLogs=rainRows.map(row=>({id:row.id,workDate:row.work_date,settlement:row.settlement,amountMm:Number(row.amount_mm)||0}));
     currentFarmId=farmId;
@@ -523,10 +541,11 @@
       supabaseClient.from('field_ops_rainfall').select('id,work_date,settlement,amount_mm').eq('farm_id',currentFarmId)
     ]);
     if(!rows)return;
-    state.fields=rows.map(row=>({...row,sourceId:row.source_id,area:areaHaFromName(row.name),operations:Array.isArray(row.operations)?row.operations:[]}));
+    state.fields=mergeFieldsBySource(rows.map(row=>({...row,sourceId:row.source_id,area:areaHaFromName(row.name),operations:Array.isArray(row.operations)?row.operations:[]})));
     if(settings){state.kinds=settings.kinds||[...DEFAULT_KINDS];state.operationTypes=settings.operation_types||[...DEFAULT_TYPES];state.importedAt=settings.imported_at||'';}
     state.campaigns=(campaignRows||[]).map(row=>({id:row.id,name:row.name,planArea:Number(row.plan_area)||0}));state.shiftLogs=(shiftRows||[]).map(row=>({id:row.id,workDate:row.work_date,shift:row.shift,campaignId:row.campaign_id,aggregateCount:Number(row.aggregate_count)||0,fields:Array.isArray(row.field_entries)?row.field_entries:[]}));state.rainfallLogs=(rainRows||[]).map(row=>({id:row.id,workDate:row.work_date,settlement:row.settlement,amountMm:Number(row.amount_mm)||0}));
     localStorage.setItem(STORAGE_KEY,JSON.stringify(state));rebuildMap();render();
   }
 })();
+
 
