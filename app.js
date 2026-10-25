@@ -105,7 +105,7 @@
     const polygon = L.polygon(shapeLatLngs(field), polygonStyle(field)).addTo(editableFields);
     polygon._fieldId = field.id;
     polygon.bindTooltip(escapeHtml(field.name), { permanent:true, direction:'center', className:'field-map-label', opacity:.96, interactive:false });
-    polygon.on('click', () => openField(field.id));
+    polygon.on('click', () => {if(!shapeEditFieldId)openField(field.id);});
     layerById.set(field.id, polygon);
   }
   function rebuildMap() {
@@ -187,7 +187,7 @@
       const number = (f.name.match(/[\d]+/) || [''])[0];
       return `<article class="field-card ${f.id===selectedId?'selected':''}" data-id="${escapeHtml(f.id)}"><span class="field-swatch" style="background:${fieldColor(f)}22;color:${fieldColor(f)}">${escapeHtml(number || '⌑')}</span><span class="field-card-main"><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(displayOperation(op))}</small></span><span class="field-card-side"><strong>${fmt(areaHaFromName(f.name))} га</strong><span class="state-pill ${status==='active'?'active':op?.status==='done'?'done':''}">${stateLabel}</span></span></article>`;
     }).join('');
-    host.querySelectorAll('.field-card').forEach(card => card.addEventListener('click', () => openField(card.dataset.id)));
+    host.querySelectorAll('.field-card').forEach(card => card.addEventListener('click', () => {if(!shapeEditFieldId)openField(card.dataset.id);}));
     state.fields.forEach(field => { const layer=layerById.get(field.id); if(layer) layer.setStyle(polygonStyle(field,field.id===selectedId)); });
   }
   function openField(id) {
@@ -461,7 +461,7 @@
     const local=hasMigratedLocalData?{fields:[],kinds:[...DEFAULT_KINDS],operationTypes:[...DEFAULT_TYPES],importedAt:''}:state;
     state=local;
     if(rows?.length){
-      const cloud=rows.map(row=>({...row,sourceId:row.source_id,area:Number(row.area)||0,operations:Array.isArray(row.operations)?row.operations:[]}));
+      const cloud=rows.map(row=>({...row,sourceId:row.source_id,area:areaHaFromName(row.name),operations:Array.isArray(row.operations)?row.operations:[]}));
       const known=new Set(cloud.map(field=>field.id));
       state.fields=[...cloud,...local.fields.filter(field=>!known.has(field.id))];
     }else if(local.fields.length){state.fields=local.fields;}
@@ -482,7 +482,7 @@
   }
   async function saveCloudState(){
     if(!supabaseClient||!currentSession||!currentFarmId)return;
-    const fields=state.fields.map(field=>({id:field.id,farm_id:currentFarmId,source_id:field.sourceId||'',name:field.name||'Поле',geometry:field.geometry,area:Number(field.area)||0,operations:field.operations||[],color:field.color||null,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId}));
+    const fields=state.fields.map(field=>({id:field.id,farm_id:currentFarmId,source_id:field.sourceId||'',name:field.name||'Поле',geometry:field.geometry,area:areaHaFromName(field.name),operations:field.operations||[],color:field.color||null,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId}));
     for(let i=0;i<fields.length;i+=100){const {error}=await supabaseClient.from('field_ops_fields').upsert(fields.slice(i,i+100),{onConflict:'id'});if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}}
     const {error}=await supabaseClient.from('field_ops_settings').upsert({farm_id:currentFarmId,kinds:state.kinds,operation_types:state.operationTypes,imported_at:state.importedAt||'',updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId},{onConflict:'farm_id'});
     if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}
