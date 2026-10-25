@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f5f6f1">
   <title>Поля — журнал работ</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" crossorigin="anonymous" referrerpolicy="no-referrer">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,7 +20,7 @@
   <main class="layout">
     <section class="map-wrap">
       <div id="map" aria-label="Карта полей"></div>
-      <div class="map-hint"><span>⌖</span> Выберите поле на карте</div>
+      <div class="map-hint"><span>⌖</span> Выберите поле · границы меняются кнопкой карандаша</div>
       <div class="map-legend"><i></i> Нет активных работ <i class="doing"></i> Работа идёт</div>
     </section>
     <aside class="sidebar">
@@ -77,6 +78,7 @@
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="app.js"></script>
 </body>
 </html>
