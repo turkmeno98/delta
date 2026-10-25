@@ -43,7 +43,8 @@
   <main class="layout">
     <section class="map-wrap">
       <div id="map" aria-label="Карта полей"></div>
-      <div class="map-hint"><span>⌖</span> Выберите поле · границы меняются кнопкой карандаша</div>
+      <div class="map-hint"><span>⌖</span> Нажмите на поле, чтобы открыть его карточку</div>
+      <div id="shape-edit-tools" class="shape-edit-tools" hidden><div><strong>Редактирование границ</strong><small>Перетаскивайте точки контура выбранного поля</small></div><div class="shape-edit-actions"><button type="button" id="cancel-shape-edit" class="secondary-button">Отмена</button><button type="button" id="save-shape-edit" class="primary-button">Сохранить границы</button></div></div>
       <div class="map-legend"><i></i> Нет активных работ <i class="doing"></i> Работа идёт</div>
     </section>
     <aside class="sidebar">
@@ -62,6 +63,7 @@
       <div class="dialog-head"><div><span class="eyebrow">КАРТОЧКА ПОЛЯ</span><h2 id="dialog-title">Поле</h2></div><button class="close-button" value="cancel" aria-label="Закрыть">×</button></div>
       <label class="form-label">Название поля<input id="field-name" maxlength="80" placeholder="Например, Северное"></label>
       <div class="field-meta"><span id="field-area">— га</span><span id="field-source-id">Исходное поле</span></div>
+      <button type="button" id="edit-field-shape" class="secondary-button shape-edit-button">⌁ Изменить границы этого поля</button>
       <div class="section-title"><div><span class="eyebrow">РАБОТЫ</span><h3>Операции на поле</h3></div><button type="button" id="add-operation" class="secondary-button">＋ Добавить</button></div>
       <div id="operation-list" class="operation-list"></div>
       <div class="dialog-footer"><span>Изменения сохраняются автоматически</span><button type="button" id="done-button" class="primary-button">Готово</button></div>
