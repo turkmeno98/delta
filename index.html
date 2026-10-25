@@ -10,11 +10,33 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <section id="auth-gate" class="auth-gate">
+    <form id="auth-form" class="auth-card">
+      <span class="brand-icon">✳</span>
+      <span class="eyebrow">ОБЩАЯ РАБОЧАЯ КАРТА</span>
+      <h1>Войдите в «Поля»</h1>
+      <p id="auth-message">Войдите или создайте аккаунт, чтобы синхронизировать поля с командой.</p>
+      <label class="form-label">Электронная почта<input id="auth-email" type="email" required autocomplete="email" placeholder="name@example.com"></label>
+      <label class="form-label">Пароль<input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="Не менее 6 символов"></label>
+      <button class="primary-button" id="login-button" type="submit">Войти</button>
+      <button class="secondary-button" id="signup-button" type="button">Создать аккаунт</button>
+    </form>
+    <form id="farm-setup-form" class="auth-card" hidden>
+      <span class="eyebrow">НАСТРОЙКА ДОСТУПА</span><h1>Создайте хозяйство</h1>
+      <p>Импортируйте карту полей, затем пригласите шефа по ссылке.</p>
+      <p id="farm-message" class="auth-error" aria-live="polite"></p>
+      <label class="form-label">Название хозяйства<input id="farm-name" maxlength="80" required value="Моё хозяйство"></label>
+      <button class="primary-button" type="submit">Создать хозяйство</button>
+    </form>
+  </section>
+  <div id="app-shell" hidden>
   <header class="topbar">
     <a class="brand" href="#"><span class="brand-icon">✳</span><span><b>Поля</b><small>УЧЁТ РАБОТ</small></span></a>
     <div class="top-summary"><span class="live-dot"></span><span id="summary-text">Загрузите карту полей</span></div>
     <label class="upload-button" for="kml-input">＋ Импортировать KML</label>
     <input id="kml-input" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml">
+    <button class="icon-button" id="collab-button" title="Участники хозяйства" aria-label="Участники хозяйства">♧</button>
+    <button class="icon-button" id="logout-button" title="Выйти из аккаунта" aria-label="Выйти из аккаунта">↪</button>
     <button class="icon-button" id="settings-button" title="Справочник операций" aria-label="Справочник операций">☷</button>
   </header>
   <main class="layout">
@@ -31,7 +53,7 @@
       <div class="search-row"><span>⌕</span><input id="field-search" type="search" placeholder="Найти поле..."></div>
       <div class="filters" id="status-filters"><button class="filter active" data-filter="all">Все <span id="count-all">0</span></button><button class="filter" data-filter="active">В работе <span id="count-active">0</span></button><button class="filter" data-filter="planned">Запланировано <span id="count-planned">0</span></button></div>
       <div class="field-list" id="field-list"></div>
-      <div class="local-note">Данные хранятся в этом браузере <span>●</span></div>
+      <div class="local-note">Изменения синхронизируются с участниками хозяйства <span>●</span></div>
     </aside>
   </main>
   <dialog id="field-dialog" class="field-dialog">
@@ -76,9 +98,22 @@
   <dialog id="kinds-dialog" class="kinds-dialog">
     <form method="dialog"><div class="dialog-head"><div><span class="eyebrow">СПРАВОЧНИК</span><h2>Виды операций</h2></div><button class="close-button" value="cancel">×</button></div><p class="subcopy">Добавляйте привычные названия. Для каждой работы можно отдельно выбрать тип.</p><div id="kind-list" class="kind-list"></div><div class="kind-create"><input id="new-kind-name" maxlength="60" placeholder="Например, Дискование"><button id="save-kind" type="button" class="primary-button">Добавить</button></div><div class="dialog-footer"><span>Список сохранён в браузере</span><button class="secondary-button" value="close">Закрыть</button></div></form>
   </dialog>
+  <dialog id="collab-dialog" class="operation-dialog">
+    <form method="dialog" id="invite-form">
+      <div class="dialog-head"><div><span class="eyebrow">КОМАНДА</span><h2>Общий доступ</h2></div><button class="close-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <p class="subcopy">Создайте ссылку и отправьте её шефу. Он войдёт или создаст свой аккаунт, а затем присоединится к хозяйству.</p>
+      <label class="form-label">Права участника<select id="invite-role"><option value="agronomist">Агроном — просмотр и изменения</option><option value="viewer">Наблюдатель — только просмотр</option><option value="operator">Оператор — просмотр и изменения</option></select></label>
+      <button type="button" class="primary-button" id="create-invite">Создать ссылку на 7 дней</button>
+      <div id="invite-result" class="invite-result" hidden><input id="invite-link" readonly aria-label="Ссылка-приглашение"><button type="button" class="secondary-button" id="copy-invite">Копировать</button></div>
+      <div class="dialog-footer"><span>Владелец аккаунта: <b id="account-email"></b></span><button class="secondary-button" value="close">Закрыть</button></div>
+    </form>
+  </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
