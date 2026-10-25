@@ -49,8 +49,16 @@
       <label class="form-label">Название<select id="operation-kind"></select></label>
       <button type="button" id="add-kind" class="text-button">＋ Создать свой вид операции</button>
       <label class="form-label">Тип<select id="operation-type"><option value="other">Другая работа</option><option value="seeding">Сев</option><option value="chemical">Химическая обработка</option></select></label>
-      <div id="seed-fields" class="conditional" hidden><label class="form-label">Культура / сорт<input id="seed-product" maxlength="80" placeholder="Например, озимая пшеница"></label><label class="form-label">Количество семян<input id="seed-amount" type="number" min="0" step="0.1" placeholder="0"></label><label class="form-label">Единица<select id="seed-unit"><option>кг</option><option>т</option><option>посевных единиц</option></select></label></div>
-      <div id="chemical-fields" class="conditional" hidden><label class="form-label">Препарат<input id="chemical-product" maxlength="80" placeholder="Название СЗР"></label><label class="form-label">Количество СЗР<input id="chemical-amount" type="number" min="0" step="0.1" placeholder="0"></label><label class="form-label">Единица<select id="chemical-unit"><option>л</option><option>кг</option><option>л/га</option><option>кг/га</option></select></label></div>
+      <div id="seed-fields" class="conditional" hidden>
+        <label class="form-label">Культура<input id="seed-crop" maxlength="80" placeholder="Например, пшеница"></label>
+        <label class="form-label">Сорт<input id="seed-variety" maxlength="80" placeholder="Название сорта"></label>
+        <label class="form-label">Количество семян, кг<input id="seed-amount" type="number" min="0" step="0.1" placeholder="0"></label>
+      </div>
+      <div id="chemical-fields" class="conditional" hidden>
+        <div class="chemical-heading"><strong>Препараты</strong><span>Можно добавить несколько СЗР</span></div>
+        <div id="chemical-product-list" class="chemical-product-list"></div>
+        <button type="button" id="add-chemical-product" class="text-button">＋ Добавить препарат</button>
+      </div>
       <label class="form-label">Статус<select id="operation-status"><option value="planned">Запланировано</option><option value="active">В работе</option><option value="done">Завершено</option></select></label>
       <label class="form-label">Дата<input id="operation-date" type="date"></label>
       <label class="form-label">Заметка<textarea id="operation-note" rows="2" placeholder="Препарат, сорт, техника, примечания..."></textarea></label>
