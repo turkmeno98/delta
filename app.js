@@ -518,7 +518,7 @@
       supabaseClient.from('field_ops_rainfall').select('id,work_date,settlement,amount_mm').eq('farm_id',currentFarmId)
     ]);
     if(!rows)return;
-    state.fields=rows.map(row=>({...row,sourceId:row.source_id,area:Number(row.area)||0,operations:Array.isArray(row.operations)?row.operations:[]}));
+    state.fields=rows.map(row=>({...row,sourceId:row.source_id,area:areaHaFromName(row.name),operations:Array.isArray(row.operations)?row.operations:[]}));
     if(settings){state.kinds=settings.kinds||[...DEFAULT_KINDS];state.operationTypes=settings.operation_types||[...DEFAULT_TYPES];state.importedAt=settings.imported_at||'';}
     state.campaigns=(campaignRows||[]).map(row=>({id:row.id,name:row.name,planArea:Number(row.plan_area)||0}));state.shiftLogs=(shiftRows||[]).map(row=>({id:row.id,workDate:row.work_date,shift:row.shift,campaignId:row.campaign_id,aggregateCount:Number(row.aggregate_count)||0,fields:Array.isArray(row.field_entries)?row.field_entries:[]}));state.rainfallLogs=(rainRows||[]).map(row=>({id:row.id,workDate:row.work_date,settlement:row.settlement,amountMm:Number(row.amount_mm)||0}));
     localStorage.setItem(STORAGE_KEY,JSON.stringify(state));rebuildMap();render();
