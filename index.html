@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f5f6f1">
+  <title>Поля — журнал работ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-icon">✳</span><span><b>Поля</b><small>УЧЁТ РАБОТ</small></span></a>
+    <div class="top-summary"><span class="live-dot"></span><span id="summary-text">Загрузите карту полей</span></div>
+    <label class="upload-button" for="kml-input">＋ Импортировать KML</label>
+    <input id="kml-input" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml">
+    <button class="icon-button" id="settings-button" title="Справочник операций" aria-label="Справочник операций">☷</button>
+  </header>
+  <main class="layout">
+    <section class="map-wrap">
+      <div id="map" aria-label="Карта полей"></div>
+      <div class="map-hint"><span>⌖</span> Выберите поле на карте</div>
+      <div class="map-legend"><i></i> Нет активных работ <i class="doing"></i> Работа идёт</div>
+    </section>
+    <aside class="sidebar">
+      <div class="overview">
+        <div><span class="eyebrow">РАБОЧАЯ КАРТА</span><h1>Поля хозяйства</h1><p id="farm-caption">Импортируйте KML с контурами полей</p></div>
+        <div class="stat"><strong id="field-count">0</strong><span>полей</span></div>
+      </div>
+      <div class="search-row"><span>⌕</span><input id="field-search" type="search" placeholder="Найти поле..."></div>
+      <div class="filters" id="status-filters"><button class="filter active" data-filter="all">Все <span id="count-all">0</span></button><button class="filter" data-filter="active">В работе <span id="count-active">0</span></button><button class="filter" data-filter="planned">Запланировано <span id="count-planned">0</span></button></div>
+      <div class="field-list" id="field-list"></div>
+      <div class="local-note">Данные хранятся в этом браузере <span>●</span></div>
+    </aside>
+  </main>
+  <dialog id="field-dialog" class="field-dialog">
+    <form method="dialog" id="field-form">
+      <div class="dialog-head"><div><span class="eyebrow">КАРТОЧКА ПОЛЯ</span><h2 id="dialog-title">Поле</h2></div><button class="close-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <label class="form-label">Название поля<input id="field-name" maxlength="80" placeholder="Например, Северное"></label>
+      <div class="field-meta"><span id="field-area">— га</span><span id="field-source-id">Исходное поле</span></div>
+      <div class="section-title"><div><span class="eyebrow">РАБОТЫ</span><h3>Операции на поле</h3></div><button type="button" id="add-operation" class="secondary-button">＋ Добавить</button></div>
+      <div id="operation-list" class="operation-list"></div>
+      <div class="dialog-footer"><span>Изменения сохраняются автоматически</span><button type="button" id="done-button" class="primary-button">Готово</button></div>
+    </form>
+  </dialog>
+  <dialog id="operation-dialog" class="operation-dialog">
+    <form method="dialog" id="operation-form">
+      <div class="dialog-head"><div><span class="eyebrow">НОВАЯ РАБОТА</span><h2>Добавить операцию</h2></div><button class="close-button" value="cancel">×</button></div>
+      <label class="form-label">Название<select id="operation-kind"></select></label>
+      <button type="button" id="add-kind" class="text-button">＋ Создать свой вид операции</button>
+      <label class="form-label">Тип<select id="operation-type"><option value="other">Другая работа</option><option value="seeding">Сев</option><option value="chemical">Химическая обработка</option></select></label>
+      <div id="seed-fields" class="conditional" hidden><label class="form-label">Культура / сорт<input id="seed-product" maxlength="80" placeholder="Например, озимая пшеница"></label><label class="form-label">Количество семян<input id="seed-amount" type="number" min="0" step="0.1" placeholder="0"></label><label class="form-label">Единица<select id="seed-unit"><option>кг</option><option>т</option><option>посевных единиц</option></select></label></div>
+      <div id="chemical-fields" class="conditional" hidden><label class="form-label">Препарат<input id="chemical-product" maxlength="80" placeholder="Название СЗР"></label><label class="form-label">Количество СЗР<input id="chemical-amount" type="number" min="0" step="0.1" placeholder="0"></label><label class="form-label">Единица<select id="chemical-unit"><option>л</option><option>кг</option><option>л/га</option><option>кг/га</option></select></label></div>
+      <label class="form-label">Статус<select id="operation-status"><option value="planned">Запланировано</option><option value="active">В работе</option><option value="done">Завершено</option></select></label>
+      <label class="form-label">Дата<input id="operation-date" type="date"></label>
+      <label class="form-label">Заметка<textarea id="operation-note" rows="2" placeholder="Препарат, сорт, техника, примечания..."></textarea></label>
+      <div class="dialog-footer"><button type="button" id="cancel-operation" class="secondary-button">Отмена</button><button type="submit" class="primary-button">Сохранить работу</button></div>
+    </form>
+  </dialog>
+  <dialog id="kinds-dialog" class="kinds-dialog">
+    <form method="dialog"><div class="dialog-head"><div><span class="eyebrow">СПРАВОЧНИК</span><h2>Виды операций</h2></div><button class="close-button" value="cancel">×</button></div><p class="subcopy">Добавляйте привычные названия. Для каждой работы можно отдельно выбрать тип.</p><div id="kind-list" class="kind-list"></div><div class="kind-create"><input id="new-kind-name" maxlength="60" placeholder="Например, Дискование"><button id="save-kind" type="button" class="primary-button">Добавить</button></div><div class="dialog-footer"><span>Список сохранён в браузере</span><button class="secondary-button" value="close">Закрыть</button></div></form>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
