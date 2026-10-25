@@ -37,8 +37,8 @@
     try {
       const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       const customTypes=Array.isArray(raw.operationTypes) ? raw.operationTypes.filter(type=>type?.id&&!DEFAULT_TYPES.some(base=>base.id===type.id)) : [];
-      return { fields: Array.isArray(raw.fields) ? raw.fields : [], kinds: Array.isArray(raw.kinds) ? raw.kinds : [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES,...customTypes], importedAt: raw.importedAt || '' };
-    } catch { return { fields: [], kinds: [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES], importedAt: '' }; }
+      return { fields: Array.isArray(raw.fields) ? raw.fields : [], kinds: Array.isArray(raw.kinds) ? raw.kinds : [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES,...customTypes], importedAt: raw.importedAt || '', campaigns:Array.isArray(raw.campaigns)?raw.campaigns:[],shiftLogs:Array.isArray(raw.shiftLogs)?raw.shiftLogs:[],rainfallLogs:Array.isArray(raw.rainfallLogs)?raw.rainfallLogs:[] };
+    } catch { return { fields: [], kinds: [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES], importedAt: '', campaigns:[],shiftLogs:[],rainfallLogs:[] }; }
   }
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -268,6 +268,14 @@
     await openFarm(data);
   });
   $('logout-button').addEventListener('click',()=>supabaseClient?.auth.signOut());
+  $('report-button').addEventListener('click',()=>openReport());
+  $('close-report').addEventListener('click',()=>$('report-dialog').close());
+  $('report-date').addEventListener('change',renderReport);
+  document.querySelectorAll('.report-tab').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('.report-tab').forEach(tab=>tab.classList.toggle('active',tab===button));$('summary-view').hidden=button.dataset.tab!=='summary';$('journal-view').hidden=button.dataset.tab!=='journal';renderReport();}));
+  $('campaign-form').addEventListener('submit',event=>{event.preventDefault();const name=$('campaign-name').value.trim(),planArea=Number($('campaign-plan').value);if(!name||!Number.isFinite(planArea))return;const found=state.campaigns.find(item=>item.name.toLocaleLowerCase('ru')===name.toLocaleLowerCase('ru'));if(found)found.planArea=planArea;else state.campaigns.push({id:uid(),name,planArea});$('campaign-form').reset();save();renderReport();toast('План работы сохранён');});
+  $('add-shift-field').addEventListener('click',()=>addShiftFieldRow());
+  $('shift-form').addEventListener('submit',event=>{event.preventDefault();const campaignId=$('shift-campaign').value,campaign=state.campaigns.find(item=>item.id===campaignId),workDate=$('report-date').value,shift=$('shift-kind').value;if(!campaign||!workDate)return;const inputs=[...$('shift-fields').querySelectorAll('.shift-field-row')],fields=inputs.map(row=>({fieldId:row.querySelector('select').value,fieldName:state.fields.find(f=>f.id===row.querySelector('select').value)?.name||'',area:Number(row.querySelector('input').value)||0})).filter(row=>row.fieldId&&row.area>0);if(!fields.length){toast('Добавьте поле и гектары');return;}let log=state.shiftLogs.find(item=>item.workDate===workDate&&item.campaignId===campaignId&&item.shift===shift);if(!log){log={id:uid(),workDate,shift,campaignId,aggregateCount:0,fields:[]};state.shiftLogs.push(log);}log.aggregateCount=Number($('shift-aggregates').value)||0;for(const row of fields){const prev=log.fields.find(item=>item.fieldId===row.fieldId);if(prev)prev.area+=row.area;else log.fields.push(row);} $('shift-form').reset();$('shift-fields').innerHTML='';addShiftFieldRow();save();renderReport();toast('Сменная запись добавлена в журнал');});
+  $('rain-form').addEventListener('submit',event=>{event.preventDefault();const workDate=$('report-date').value,settlement=$('rain-settlement').value.trim(),amountMm=Number($('rain-amount').value);if(!workDate||!settlement||!Number.isFinite(amountMm))return;let row=state.rainfallLogs.find(item=>item.workDate===workDate&&item.settlement.toLocaleLowerCase('ru')===settlement.toLocaleLowerCase('ru'));if(row)row.amountMm=amountMm;else state.rainfallLogs.push({id:uid(),workDate,settlement,amountMm});$('rain-form').reset();save();renderReport();toast('Осадки сохранены');});
   $('collab-button').addEventListener('click',()=>{$('account-email').textContent=currentSession?.user?.email||'';$('invite-result').hidden=true;$('collab-dialog').showModal();});
   $('create-invite').addEventListener('click',async()=>{
     if(!currentFarmId)return;
@@ -280,6 +288,21 @@
   $('copy-invite').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('invite-link').value);toast('Ссылка скопирована');}catch{ $('invite-link').select(); document.execCommand('copy'); toast('Ссылка скопирована'); }});
   rebuildMap(); render();
   void initializeSharedApp();
+
+  function productionDateDefault(){const d=new Date();d.setDate(d.getDate()-1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+  function openReport(){$('report-date').value=productionDateDefault();$('report-dialog').showModal();renderReport();}
+  function addShiftFieldRow(){const row=document.createElement('div');row.className='shift-field-row';row.innerHTML=`<select aria-label="Поле"><option value="">Выберите поле</option>${state.fields.map(field=>`<option value="${escapeHtml(field.id)}">${escapeHtml(field.name)} · ${Number(field.area||0).toFixed(1)} га</option>`).join('')}</select><input type="number" min="0.1" step="0.1" placeholder="га" aria-label="Гектары"><button type="button" aria-label="Убрать поле">×</button>`;row.querySelector('button').addEventListener('click',()=>row.remove());$('shift-fields').append(row);}
+  function renderReport(){if(!$('report-date').value)return;const date=$('report-date').value,year=date.slice(0,4),today=state.shiftLogs.filter(log=>log.workDate===date),campaigns=state.campaigns;
+    $('shift-campaign').innerHTML=campaigns.length?campaigns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join(''):'<option value="">Сначала добавьте план</option>';
+    if(!$('shift-fields').children.length)addShiftFieldRow();
+    const rainToday=state.rainfallLogs.filter(row=>row.workDate===date);const rainYear=state.rainfallLogs.filter(row=>row.workDate.slice(0,4)===year&&row.workDate<=date);const settlements=[...new Set([...rainToday,...rainYear].map(row=>row.settlement))].sort((a,b)=>a.localeCompare(b,'ru'));
+    $('summary-content').innerHTML=campaigns.map(c=>{const entries=state.shiftLogs.filter(log=>log.campaignId===c.id&&log.workDate<=date),todayArea=today.filter(log=>log.campaignId===c.id).reduce((sum,log)=>sum+log.fields.reduce((n,f)=>n+(Number(f.area)||0),0),0),total=entries.reduce((sum,log)=>sum+log.fields.reduce((n,f)=>n+(Number(f.area)||0),0),0),remaining=Math.max(0,(Number(c.planArea)||0)-total),aggregates=Math.max(0,...today.filter(log=>log.campaignId===c.id).map(log=>Number(log.aggregateCount)||0)),pct=c.planArea?total/Number(c.planArea)*100:0;return `<div class="report-block"><h3>${escapeHtml(c.name)}</h3><div><b>План, га</b><span>${fmt(c.planArea)} <i>100%</i></span></div><div><b>За сутки, га</b><span>${fmt(todayArea)}</span></div><div><b>Всего, га</b><span>${fmt(total)} <i>${fmt(pct)}%</i></span></div><div><b>Остаток, га</b><span>${fmt(remaining)} <i>${fmt(c.planArea?remaining/Number(c.planArea)*100:0)}%</i></span></div><small>Работало ${aggregates} агрегат${plural(aggregates)}</small></div>`;}).join('')||'<p class="report-empty">Добавьте план работы, чтобы сформировать сводку.</p>';
+    $('summary-content').insertAdjacentHTML('beforeend',`<div class="report-block rain-block"><h3>Осадки в виде дождя, мм</h3><div class="rain-head"><b>Населённый пункт</b><b>За сутки на утро</b><b>Всего с начала года</b></div>${settlements.map(name=>`<div class="rain-row"><b>${escapeHtml(name)}</b><span>${fmt(rainToday.filter(r=>r.settlement===name).reduce((n,r)=>n+Number(r.amountMm||0),0))}</span><span>${fmt(rainYear.filter(r=>r.settlement===name).reduce((n,r)=>n+Number(r.amountMm||0),0))}</span></div>`).join('')}</div>`);
+    const logs=today.slice().sort((a,b)=>(a.shift==='day'?-1:1));const logRows=logs.flatMap(log=>log.fields.map(f=>`<tr><td>${log.shift==='day'?'Дневная · 07:00–17:00':'Ночная · 18:00–06:59'}</td><td>${escapeHtml(campaigns.find(c=>c.id===log.campaignId)?.name||'')}</td><td>${escapeHtml(f.fieldName||state.fields.find(x=>x.id===f.fieldId)?.name||'')}</td><td>${fmt(f.area)} га</td><td>${Number(log.aggregateCount)||0}</td></tr>`));const operationRows=state.fields.flatMap(field=>(field.operations||[]).filter(op=>op.date===date).map(op=>{const detail=[op.crop,op.variety,op.products?.map(p=>[p.name,p.amount,p.unit].filter(Boolean).join(' ')).join(', '),op.note].filter(Boolean).join(' · ');return `<tr><td>Работа по полю</td><td>${escapeHtml(op.kind||'')}</td><td>${escapeHtml(field.name)}</td><td>${escapeHtml(detail||'—')}</td><td>—</td></tr>`;}));const rainRows=rainToday.map(r=>`<tr><td>Осадки</td><td>—</td><td>${escapeHtml(r.settlement)}</td><td>${fmt(r.amountMm)} мм</td><td>—</td></tr>`);
+    $('journal-view').innerHTML=`<h3>Работы за ${escapeHtml(date)}</h3><div class="journal-table-wrap"><table class="journal-table"><thead><tr><th>Смена</th><th>Работа</th><th>Поле</th><th>Выполнено / сведения</th><th>Агрегаты</th></tr></thead><tbody>${logRows.concat(operationRows,rainRows).join('')||'<tr><td colspan="5">Записей за этот день пока нет.</td></tr>'}</tbody></table></div>`;
+  }
+  function fmt(value){return (Number(value)||0).toLocaleString('ru-RU',{maximumFractionDigits:1});}
+  function plural(n){return n%10===1&&n%100!==11?'':'ов';}
 
   function setAuthMessage(message){$('auth-message').textContent=message;}
   function authError(error){return String(error?.message||'Не удалось выполнить действие.').replace(/\s+/g,' ').slice(0,240);}
@@ -297,7 +320,7 @@
     if(!session){
       const signedOut=Boolean(currentSession);
       currentSession=null;currentFarmId=null;$('app-shell').hidden=true;$('auth-gate').hidden=false;$('auth-form').hidden=false;$('farm-setup-form').hidden=true;
-      if(signedOut){state={fields:[],kinds:[...DEFAULT_KINDS],operationTypes:[...DEFAULT_TYPES],importedAt:''};rebuildMap();render();}
+      if(signedOut){state={fields:[],kinds:[...DEFAULT_KINDS],operationTypes:[...DEFAULT_TYPES],importedAt:'',campaigns:[],shiftLogs:[],rainfallLogs:[]};rebuildMap();render();}
       return;
     }
     if(currentFarmId&&currentSession?.user?.id===session.user.id)return;
@@ -320,11 +343,14 @@
   }
   async function openFarm(farmId,farmName=''){
     currentFarmId=farmId;
-    const [{data:rows,error:fieldsError},{data:settingsRow,error:settingsError}]=await Promise.all([
+    const [{data:rows,error:fieldsError},{data:settingsRow,error:settingsError},{data:campaignRows,error:campaignError},{data:shiftRows,error:shiftError},{data:rainRows,error:rainError}]=await Promise.all([
       supabaseClient.from('field_ops_fields').select('id,source_id,name,geometry,area,operations,color').eq('farm_id',farmId),
-      supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',farmId).maybeSingle()
+      supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',farmId).maybeSingle(),
+      supabaseClient.from('field_ops_campaigns').select('id,name,plan_area').eq('farm_id',farmId),
+      supabaseClient.from('field_ops_shift_logs').select('id,work_date,shift,campaign_id,aggregate_count,field_entries').eq('farm_id',farmId),
+      supabaseClient.from('field_ops_rainfall').select('id,work_date,settlement,amount_mm').eq('farm_id',farmId)
     ]);
-    if(fieldsError)throw fieldsError;if(settingsError)throw settingsError;
+    if(fieldsError)throw fieldsError;if(settingsError)throw settingsError;if(campaignError)throw campaignError;if(shiftError)throw shiftError;if(rainError)throw rainError;
     const local=hasMigratedLocalData?{fields:[],kinds:[...DEFAULT_KINDS],operationTypes:[...DEFAULT_TYPES],importedAt:''}:state;
     state=local;
     if(rows?.length){
@@ -333,6 +359,7 @@
       state.fields=[...cloud,...local.fields.filter(field=>!known.has(field.id))];
     }else if(local.fields.length){state.fields=local.fields;}
     if(settingsRow){state.kinds=settingsRow.kinds||[...DEFAULT_KINDS];state.operationTypes=settingsRow.operation_types||[...DEFAULT_TYPES];state.importedAt=settingsRow.imported_at||'';}
+    state.campaigns=campaignRows.map(row=>({id:row.id,name:row.name,planArea:Number(row.plan_area)||0}));state.shiftLogs=shiftRows.map(row=>({id:row.id,workDate:row.work_date,shift:row.shift,campaignId:row.campaign_id,aggregateCount:Number(row.aggregate_count)||0,fields:Array.isArray(row.field_entries)?row.field_entries:[]}));state.rainfallLogs=rainRows.map(row=>({id:row.id,workDate:row.work_date,settlement:row.settlement,amountMm:Number(row.amount_mm)||0}));
     currentFarmId=farmId;
     if(!rows?.length||state.fields.some(field=>!(rows||[]).some(row=>row.id===field.id))){
       const saved=await saveCloudState();
@@ -352,6 +379,11 @@
     for(let i=0;i<fields.length;i+=100){const {error}=await supabaseClient.from('field_ops_fields').upsert(fields.slice(i,i+100),{onConflict:'id'});if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}}
     const {error}=await supabaseClient.from('field_ops_settings').upsert({farm_id:currentFarmId,kinds:state.kinds,operation_types:state.operationTypes,imported_at:state.importedAt||'',updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId},{onConflict:'farm_id'});
     if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}
+    const metadata={farm_id:currentFarmId,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId};
+    const campaigns=state.campaigns.map(c=>({...metadata,id:c.id,name:c.name,plan_area:Number(c.planArea)||0}));
+    const shifts=state.shiftLogs.map(log=>({...metadata,id:log.id,work_date:log.workDate,shift:log.shift,campaign_id:log.campaignId,aggregate_count:Number(log.aggregateCount)||0,field_entries:log.fields||[]}));
+    const rain=state.rainfallLogs.map(log=>({...metadata,id:log.id,work_date:log.workDate,settlement:log.settlement,amount_mm:Number(log.amountMm)||0}));
+    for(const [table,rows] of [['field_ops_campaigns',campaigns],['field_ops_shift_logs',shifts],['field_ops_rainfall',rain]])if(rows.length){const {error:syncError}=await supabaseClient.from(table).upsert(rows,{onConflict:'id'});if(syncError){toast(`Ошибка синхронизации журнала: ${authError(syncError)}`);return false;}}
     return true;
   }
   function subscribeToFarm(){
@@ -364,17 +396,24 @@
       .on('postgres_changes',{event:'*',schema:'public',table:'field_ops_settings',filter:`farm_id=eq.${currentFarmId}`},event=>{
         if(event.new?.device_id===deviceId)return;
         void refreshCloudState();
-      }).subscribe();
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'field_ops_campaigns',filter:`farm_id=eq.${currentFarmId}`},()=>void refreshCloudState())
+      .on('postgres_changes',{event:'*',schema:'public',table:'field_ops_shift_logs',filter:`farm_id=eq.${currentFarmId}`},()=>void refreshCloudState())
+      .on('postgres_changes',{event:'*',schema:'public',table:'field_ops_rainfall',filter:`farm_id=eq.${currentFarmId}`},()=>void refreshCloudState()).subscribe();
   }
   async function refreshCloudState(){
     if(!currentFarmId)return;
-    const [{data:rows},{data:settings}]=await Promise.all([
+    const [{data:rows},{data:settings},{data:campaignRows},{data:shiftRows},{data:rainRows}]=await Promise.all([
       supabaseClient.from('field_ops_fields').select('id,source_id,name,geometry,area,operations,color').eq('farm_id',currentFarmId),
-      supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',currentFarmId).maybeSingle()
+      supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',currentFarmId).maybeSingle(),
+      supabaseClient.from('field_ops_campaigns').select('id,name,plan_area').eq('farm_id',currentFarmId),
+      supabaseClient.from('field_ops_shift_logs').select('id,work_date,shift,campaign_id,aggregate_count,field_entries').eq('farm_id',currentFarmId),
+      supabaseClient.from('field_ops_rainfall').select('id,work_date,settlement,amount_mm').eq('farm_id',currentFarmId)
     ]);
     if(!rows)return;
     state.fields=rows.map(row=>({...row,sourceId:row.source_id,area:Number(row.area)||0,operations:Array.isArray(row.operations)?row.operations:[]}));
     if(settings){state.kinds=settings.kinds||[...DEFAULT_KINDS];state.operationTypes=settings.operation_types||[...DEFAULT_TYPES];state.importedAt=settings.imported_at||'';}
+    state.campaigns=(campaignRows||[]).map(row=>({id:row.id,name:row.name,planArea:Number(row.plan_area)||0}));state.shiftLogs=(shiftRows||[]).map(row=>({id:row.id,workDate:row.work_date,shift:row.shift,campaignId:row.campaign_id,aggregateCount:Number(row.aggregate_count)||0,fields:Array.isArray(row.field_entries)?row.field_entries:[]}));state.rainfallLogs=(rainRows||[]).map(row=>({id:row.id,workDate:row.work_date,settlement:row.settlement,amountMm:Number(row.amount_mm)||0}));
     localStorage.setItem(STORAGE_KEY,JSON.stringify(state));rebuildMap();render();
   }
 })();
