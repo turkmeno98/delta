@@ -7,15 +7,23 @@
   const $ = (id) => document.getElementById(id);
   const map = L.map('map', { zoomControl: false }).setView([51.105, 44.55], 11);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  });
+  const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Tiles &copy; Esri'
   }).addTo(map);
+  L.control.layers({ '🛰️ Спутник': satelliteLayer, '🗺️ Карта': streetLayer }, null, { position: 'topright' }).addTo(map);
+  const editableFields = L.featureGroup().addTo(map);
 
   let state = loadState();
   let activeFilter = 'all';
   let selectedId = null;
   let toastTimer;
   const layerById = new Map();
+  if (L.Control.Draw) {
+    new L.Control.Draw({ position: 'topleft', draw: false, edit: { featureGroup: editableFields, remove: false } }).addTo(map);
+  }
 
   function loadState() {
     try {
@@ -74,19 +82,34 @@
   function shapeLatLngs(field) { return field.geometry.map(r => r.map(([lon,lat]) => [lat,lon])); }
   function polygonStyle(field, selected=false) { return { color: selected ? '#294e32' : '#fff', weight: selected ? 3 : 1.6, opacity: .95, fillColor: fieldColor(field), fillOpacity: selected ? .67 : .48 }; }
   function addLayer(field) {
-    const polygon = L.polygon(shapeLatLngs(field), polygonStyle(field)).addTo(map);
+    const polygon = L.polygon(shapeLatLngs(field), polygonStyle(field)).addTo(editableFields);
+    polygon._fieldId = field.id;
     polygon.bindTooltip(escapeHtml(field.name), { permanent:true, direction:'center', className:'field-map-label', opacity:.96, interactive:false });
     polygon.on('click', () => openField(field.id));
     layerById.set(field.id, polygon);
   }
   function rebuildMap() {
-    layerById.forEach(layer => map.removeLayer(layer)); layerById.clear();
+    editableFields.clearLayers(); layerById.clear();
     state.fields.forEach(addLayer);
     if (state.fields.length && !selectedId) {
       const group = L.featureGroup([...layerById.values()]);
       map.fitBounds(group.getBounds(), { padding:[24,24], maxZoom:14 });
     }
   }
+  map.on(L.Draw?.Event?.EDITED || 'draw:edited', event => {
+    event.layers.eachLayer(layer => {
+      const field = state.fields.find(item => item.id === layer._fieldId);
+      if (!field) return;
+      const geometry = layer.toGeoJSON().geometry;
+      if (geometry?.type !== 'Polygon') return;
+      field.geometry = geometry.coordinates;
+      field.area = areaHa(field.geometry);
+      const tooltip = layer.getTooltip();
+      if (tooltip) tooltip.setLatLng(layer.getBounds().getCenter());
+    });
+    save();
+    toast('Границы и площадь полей сохранены в этом браузере');
+  });
   function latestOperation(field) {
     const operations = [...field.operations].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
     return operations.find(o => o.status !== 'done') || operations[0] || null;
