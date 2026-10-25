@@ -28,6 +28,7 @@
   let realtimeChannel = null;
   let authBusy = false;
   let hasMigratedLocalData = localStorage.getItem('field-operations-cloud-migrated-v1') === 'true';
+  let operationDateEdited = false;
   const deviceId = localStorage.getItem('field-operations-device-v1') || (() => { const value = uid(); localStorage.setItem('field-operations-device-v1', value); return value; })();
   const layerById = new Map();
   let shapeEditFieldId = null;
@@ -68,10 +69,18 @@
     const match=String(name||'').match(/\/\s*(\d+(?:[.,]\d+)?)/);
     return match ? Number(match[1].replace(',','.')) : 0;
   }
+  function isMultiPolygon(geometry){return Array.isArray(geometry?.[0]?.[0]?.[0]);}
+  function polygonParts(geometry){return !Array.isArray(geometry)||!geometry.length?[]:isMultiPolygon(geometry)?geometry:[geometry];}
+  function mergeGeometry(first,second){
+    const parts=[...polygonParts(first),...polygonParts(second)],unique=[],seen=new Set();
+    for(const part of parts){const key=JSON.stringify(part);if(seen.has(key))continue;seen.add(key);unique.push(part);}
+    return unique.length>1?unique:unique[0]||first||second||[];
+  }
+  function sourceKey(field){return String(field.sourceId||field.source_id||'').trim().toLocaleLowerCase('ru');}
   function mergeFieldsBySource(fields) {
     const merged=new Map();
     for(const field of fields){
-      const source=String(field.sourceId||field.source_id||'').trim().toLocaleLowerCase('ru');
+      const source=sourceKey(field);
       const key=source?`source:${source}`:`id:${field.id}`;
       const previous=merged.get(key);
       if(!previous){merged.set(key,{...field,operations:Array.isArray(field.operations)?[...field.operations]:[]});continue;}
@@ -82,7 +91,7 @@
         seen.add(operationKey);operations.push(operation);
       }
       previous.operations=operations;
-      if(!previous.geometry?.length&&field.geometry?.length)previous.geometry=field.geometry;
+      if(field.geometry?.length)previous.geometry=mergeGeometry(previous.geometry,field.geometry);
       if(!previous.name&&field.name)previous.name=field.name;
     }
     return [...merged.values()];
@@ -98,27 +107,25 @@
     const parsed = [];
     placemarks.forEach((pm, index) => {
       const polygons = [...pm.getElementsByTagNameNS('*', 'Polygon')];
-      polygons.forEach((polygon, partIndex) => {
-        const rings = [...polygon.getElementsByTagNameNS('*', 'LinearRing')].map(r => parseCoordinates(r.getElementsByTagNameNS('*','coordinates')[0]?.textContent)).filter(r => r.length > 3);
-        if (!rings.length) return;
+      const polygonParts=polygons.map(polygon=>[...polygon.getElementsByTagNameNS('*','LinearRing')].map(r=>parseCoordinates(r.getElementsByTagNameNS('*','coordinates')[0]?.textContent)).filter(r=>r.length>3)).filter(rings=>rings.length);
+      if(!polygonParts.length)return;
         const name = pm.getElementsByTagNameNS('*','name')[0]?.textContent?.trim() || '';
         const description = pm.getElementsByTagNameNS('*','description')[0]?.textContent || '';
         const cleanDescription = description.replace(/<br\s*\/?\s*>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
         const label = cleanDescription || name || `Поле ${index+1}`;
         const num = index+1;
-        const fieldName=name || cleanDescription.replace(/\s*№.*$/,'') || `Поле ${num}${partIndex ? ` · ${partIndex+1}` : ''}`;
-        parsed.push({ id: uid(), sourceId: label, name: fieldName, geometry: rings, area: areaHaFromName(fieldName), operations: [], color: COLORS[index % COLORS.length] });
-      });
+        const fieldName=name || cleanDescription.replace(/\s*№.*$/,'') || `Поле ${num}`;
+        parsed.push({ id: uid(), sourceId: label, name: fieldName, geometry: polygonParts.length>1?polygonParts:polygonParts[0], area: areaHaFromName(fieldName), operations: [], color: COLORS[index % COLORS.length] });
     });
     if (!parsed.length) throw new Error('В KML нет полигонов с координатами.');
     return parsed;
   }
   function operationState(field) {
-    const open = field.operations.filter(o => o.status !== 'done');
+    const open = (Array.isArray(field.operations) ? field.operations : []).filter(o => o.status === 'active' || o.status === 'planned');
     return open.some(o => o.status === 'active') ? 'active' : open.length ? 'planned' : 'idle';
   }
   function fieldColor(field) { const s=operationState(field); return s==='active' ? '#d7a34e' : s==='planned' ? '#71916a' : field.color || '#81947a'; }
-  function shapeLatLngs(field) { return field.geometry.map(r => r.map(([lon,lat]) => [lat,lon])); }
+  function shapeLatLngs(field) { const polygons=polygonParts(field.geometry);const converted=polygons.map(rings=>rings.map(ring=>ring.map(([lon,lat])=>[lat,lon])));return isMultiPolygon(field.geometry)?converted:converted[0]||[]; }
   function polygonStyle(field, selected=false) { return { color: selected ? '#294e32' : '#fff', weight: selected ? 3 : 1.6, opacity: .95, fillColor: fieldColor(field), fillOpacity: selected ? .67 : .48 }; }
   function addLayer(field) {
     const polygon = L.polygon(shapeLatLngs(field), polygonStyle(field)).addTo(editableFields);
@@ -142,7 +149,7 @@
     if(field&&layer){
       if(saveChanges){
         const geometry=layer.toGeoJSON().geometry;
-        if(geometry?.type==='Polygon')field.geometry=geometry.coordinates;
+        if(geometry?.type==='Polygon'||geometry?.type==='MultiPolygon')field.geometry=geometry.coordinates;
       }else if(shapeEditOriginal){
         field.geometry=shapeEditOriginal;
         layer.setLatLngs(shapeLatLngs(field));
@@ -172,7 +179,7 @@
       const field=state.fields.find(item=>item.id===layer._fieldId);
       if(!field)return;
       const geometry=layer.toGeoJSON().geometry;
-      if(geometry?.type==='Polygon')field.geometry=geometry.coordinates;
+      if(geometry?.type==='Polygon'||geometry?.type==='MultiPolygon')field.geometry=geometry.coordinates;
       const tooltip=layer.getTooltip();
       if(tooltip)tooltip.setLatLng(layer.getBounds().getCenter());
     });
@@ -180,10 +187,29 @@
     toast('Границы поля сохранены');
   });
   function latestOperation(field) {
-    const operations = [...field.operations].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
-    return operations.find(o => o.status !== 'done') || operations[0] || null;
+    const operations = [...(Array.isArray(field.operations) ? field.operations : [])].sort((a,b) => (b.date || '').localeCompare(a.date || '') || String(b.id||'').localeCompare(String(a.id||'')));
+    return operations.find(operation=>operation.status==='active')||operations.find(operation=>operation.status==='planned')||operations[0]||null;
   }
   function displayOperation(op) { if (!op) return 'Пока без операций'; const status = {planned:'запланировано',active:'в работе',done:'завершено'}[op.status] || ''; return `${op.kind} · ${status}`; }
+  function completedAreaForOperation(field, reference) {
+    const normalizedKind=String(reference.kind||'').trim().toLocaleLowerCase('ru'),year=String(reference.date||'').slice(0,4);
+    return (Array.isArray(field.operations)?field.operations:[]).filter(operation=>{
+      if(operation.status!=='done'||String(operation.kind||'').trim().toLocaleLowerCase('ru')!==normalizedKind||String(operation.type||'other')!==String(reference.type||'other'))return false;
+      if(year&&String(operation.date||'').slice(0,4)!==year)return false;
+      if(reference.type==='seeding'&&(String(operation.crop||'').trim().toLocaleLowerCase('ru')!==String(reference.crop||'').trim().toLocaleLowerCase('ru')||String(operation.variety||'').trim().toLocaleLowerCase('ru')!==String(reference.variety||'').trim().toLocaleLowerCase('ru')))return false;
+      return true;
+    }).reduce((total,operation)=>total+(Number(operation.area)||0),0);
+  }
+  function fieldStatusLabel(field, operation, status) {
+    if(status==='active')return 'В работе';
+    if(status==='planned')return 'Запланировано';
+    if(!operation)return 'Без работ';
+    if(operation.status!=='done')return 'Без текущих работ';
+    const target=areaHaFromName(field.name),completed=completedAreaForOperation(field,operation);
+    if(target<=0)return `Выполнено ${fmt(completed)} га`;
+    if(completed+0.05>=target)return `Выполнено ${fmt(target)} га`;
+    return `${fmt(completed)} / ${fmt(target)} га`;
+  }
   function render() {
     state.fields.forEach(field=>{field.area=areaHaFromName(field.name);});
     $('field-count').textContent = state.fields.length;
@@ -202,9 +228,10 @@
       host.innerHTML = state.fields.length ? '<div class="empty-state"><b>Ничего не найдено</b>Измените фильтр или поисковый запрос.</div>' : '<div class="empty-state"><b>Начните с карты полей</b>Загрузите ваш KML-файл, чтобы увидеть контуры и вести журнал работ.</div>';
     } else host.innerHTML = fields.map(f => {
       const op = latestOperation(f), status = operationState(f);
-      const stateLabel = status==='active' ? 'В работе' : status==='planned' ? 'Запланировано' : op ? 'Завершено' : 'Без работ';
+      const stateLabel=fieldStatusLabel(f,op,status);
       const number = (f.name.match(/[\d]+/) || [''])[0];
-      return `<article class="field-card ${f.id===selectedId?'selected':''}" data-id="${escapeHtml(f.id)}"><span class="field-swatch" style="background:${fieldColor(f)}22;color:${fieldColor(f)}">${escapeHtml(number || '⌑')}</span><span class="field-card-main"><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(displayOperation(op))}</small></span><span class="field-card-side"><strong>${fmt(areaHaFromName(f.name))} га</strong><span class="state-pill ${status==='active'?'active':op?.status==='done'?'done':''}">${stateLabel}</span></span></article>`;
+      const pillClass=status==='active'?'active':status==='planned'?'planned':op?.status==='done'?(stateLabel.startsWith('Выполнено')?'done':'partial'):'';
+      return `<article class="field-card ${f.id===selectedId?'selected':''}" data-id="${escapeHtml(f.id)}"><span class="field-swatch" style="background:${fieldColor(f)}22;color:${fieldColor(f)}">${escapeHtml(number || '⌑')}</span><span class="field-card-main"><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(displayOperation(op))}</small></span><span class="field-card-side"><strong>${fmt(areaHaFromName(f.name))} га</strong><span class="state-pill ${pillClass}" title="Статус относится к последней работе; объём выполненного считается по этой операции">${escapeHtml(stateLabel)}</span></span></article>`;
     }).join('');
     host.querySelectorAll('.field-card').forEach(card => card.addEventListener('click', () => {if(!shapeEditFieldId)openField(card.dataset.id);}));
     state.fields.forEach(field => { const layer=layerById.get(field.id); if(layer) layer.setStyle(polygonStyle(field,field.id===selectedId)); });
@@ -256,15 +283,16 @@
   $('kml-input').addEventListener('change', async event => {
     const file=event.target.files?.[0]; if(!file) return;
     try {
-      const imported=parseKml(await file.text());
+      const imported=mergeFieldsBySource(parseKml(await file.text()));
       const noArea=imported.filter(field=>!areaHaFromName(field.name)).map(field=>field.name);
       const duplicates=imported.map(field=>field.name).filter((name,index,names)=>names.findIndex(item=>item.toLocaleLowerCase('ru')===name.toLocaleLowerCase('ru'))!==index);
       const preview=imported.slice(0,18).map(field=>`• ${field.name} — ${fmt(areaHaFromName(field.name))} га${areaHaFromName(field.name)?'':' (проверьте площадь)'}`).join('\n');
       const warnings=[noArea.length?`\nБез площади в названии: ${noArea.length}. Для них будет 0 га.`:'',duplicates.length?`\nПовторяющиеся названия: ${[...new Set(duplicates)].join(', ')}.`:''].join('');
       if(!window.confirm(`Импортировать ${imported.length} полей из файла «${file.name}»?\n\n${preview}${imported.length>18?'\n…':''}${warnings}\n\nСуществующие операции и названия совпавших полей сохранятся.`)){event.target.value='';return;}
-      const existing=new Map(state.fields.map(f=>[f.sourceId,f]));
-      const replacement=imported.map(f=>{const prior=existing.get(f.sourceId); return prior ? {...f,name:prior.name,operations:prior.operations,color:prior.color} : f;});
-      const retained=state.fields.filter(f=>!imported.some(n=>n.sourceId===f.sourceId));
+      const existing=new Map(state.fields.map(f=>[sourceKey(f),f]));
+      const replacement=imported.map(f=>{const prior=existing.get(sourceKey(f)); return prior ? {...f,id:prior.id,name:prior.name,operations:prior.operations,color:prior.color,geometry:mergeGeometry(prior.geometry,f.geometry)} : f;});
+      const importedSources=new Set(imported.map(sourceKey));
+      const retained=state.fields.filter(f=>!importedSources.has(sourceKey(f)));
       state.fields=[...replacement,...retained]; state.importedAt=new Date().toLocaleDateString('ru-RU'); selectedId=null; save(); rebuildMap(); toast(`Импортировано полей: ${imported.length}`);
     } catch(error) { toast(error.message || 'Ошибка при чтении файла'); }
     event.target.value='';
@@ -276,7 +304,9 @@
   $('edit-field-shape').addEventListener('click',beginShapeEdit);
   $('save-shape-edit').addEventListener('click',()=>finishShapeEdit(true));
   $('cancel-shape-edit').addEventListener('click',()=>finishShapeEdit(false));
-  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();updateOperationTypeOptions();$('operation-form').reset();$('operation-status').value='done';$('operation-area').value='';$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
+  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();updateOperationTypeOptions();$('operation-form').reset();$('operation-status').value='done';$('operation-area').value='';$('chemical-product-list').replaceChildren();const now=new Date(),night=now.getHours()>=18||now.getHours()<7;$('operation-shift').value=night?'night':'day';operationDateEdited=false;$('operation-date').value=productionDateFor(now,night?'night':'day');const field=state.fields.find(item=>item.id===selectedId);$('operation-area-help').textContent=field?`Размер поля «${field.name}» — ${fmt(areaHaFromName(field.name))} га. Укажите фактически обработанную площадь.`:'';$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
+  $('operation-date').addEventListener('input',()=>{operationDateEdited=true;});
+  $('operation-shift').addEventListener('change',()=>{if(!operationDateEdited)$('operation-date').value=productionDateFor(new Date(),$('operation-shift').value);});
   $('operation-type').addEventListener('change',()=>{
     const type=$('operation-type').value;
     $('seed-fields').hidden=type!=='seeding'; $('chemical-fields').hidden=type!=='chemical';
@@ -287,6 +317,8 @@
     e.preventDefault(); const field=state.fields.find(x=>x.id===selectedId); if(!field)return;
     const type=$('operation-type').value, kind=$('operation-kind').value||'Работа', area=Number($('operation-area').value), aggregateCount=Math.max(0,Number($('operation-aggregates').value)||0);
     if(!Number.isFinite(area)||area<=0){toast('Укажите обработанную площадь в гектарах');$('operation-area').focus();return;}
+    const fieldArea=areaHaFromName(field.name);
+    if(fieldArea>0&&area>fieldArea+0.05&&!window.confirm(`Указано ${fmt(area)} га, а площадь поля «${field.name}» — ${fmt(fieldArea)} га. Возможно, вы ошиблись при вводе. Записать такой объём?`))return;
     const products=type==='chemical'?[...$('chemical-product-list').querySelectorAll('.chemical-product-row')].map(row=>({name:row.querySelector('[data-chemical-name]').value.trim(),amount:row.querySelector('[data-chemical-amount]').value,unit:row.querySelector('[data-chemical-unit]').value})).filter(item=>item.name||item.amount):[];
     const crop=type==='seeding'?$('seed-crop').value.trim():'';
     const variety=type==='seeding'?$('seed-variety').value.trim():'';
@@ -355,7 +387,9 @@
   rebuildMap(); render();
   void initializeSharedApp();
 
-  function productionDateDefault(){const d=new Date();d.setDate(d.getDate()-1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+  function localDateString(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
+  function productionDateFor(date,shift){const value=new Date(date);if((shift==='night'&&value.getHours()<18)||(shift==='day'&&value.getHours()<7))value.setDate(value.getDate()-1);return localDateString(value);}
+  function productionDateDefault(){const d=new Date();d.setDate(d.getDate()-1);return localDateString(d);}
   function openReport(){$('report-date').value=productionDateDefault();$('report-dialog').showModal();renderReport();}
   function exportSummaryImage(){
     const content=$('summary-content');
@@ -505,8 +539,8 @@
   }
   async function saveCloudState(){
     if(!supabaseClient||!currentSession||!currentFarmId)return;
-    const fields=state.fields.map(field=>({id:field.id,farm_id:currentFarmId,source_id:field.sourceId||'',name:field.name||'Поле',geometry:field.geometry,area:areaHaFromName(field.name),operations:field.operations||[],color:field.color||null,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId}));
-    for(let i=0;i<fields.length;i+=100){const {error}=await supabaseClient.from('field_ops_fields').upsert(fields.slice(i,i+100),{onConflict:'id'});if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}}
+    const fields=state.fields.map(field=>({id:field.id,farm_id:currentFarmId,source_id:field.sourceId||field.source_id||field.id,name:field.name||'Поле',geometry:field.geometry,area:areaHaFromName(field.name),operations:field.operations||[],color:field.color||null,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId}));
+    for(let i=0;i<fields.length;i+=100){const {error}=await supabaseClient.from('field_ops_fields').upsert(fields.slice(i,i+100),{onConflict:'farm_id,normalized_source_id'});if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}}
     const {error}=await supabaseClient.from('field_ops_settings').upsert({farm_id:currentFarmId,kinds:state.kinds,operation_types:state.operationTypes,imported_at:state.importedAt||'',updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId},{onConflict:'farm_id'});
     if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}
     const metadata={farm_id:currentFarmId,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId};

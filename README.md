@@ -19,7 +19,7 @@
 
 Приложение использует существующие таблицы `farms` и `farm_members` для учётных записей хозяйств. Новые данные хранятся отдельно в таблицах `field_ops_*`; таблицы старой агроплатформы не удаляются.
 
-В SQL Editor проекта Supabase выполните по порядку `supabase/migrations/20261025_field_operations_shared.sql` и `supabase/migrations/20261026_daily_journal.sql`. Если первую миграцию уже применяли, повторно выполнять её не нужно — выполните только вторую. Файл `supabase-config.js` содержит только URL и публичный publishable key; секретный `service_role` ключ браузеру не требуется.
+В SQL Editor проекта Supabase примените миграции по порядку: `20261025_field_operations_shared.sql`, `20261026_daily_journal.sql`, `20261027_field_ops_permissions.sql` и `20261028_unique_field_sources.sql`. Уже применённые миграции повторно запускать не нужно. Последняя миграция добавляет уникальность исходного поля в хозяйстве, чтобы одинаковые источники не создавались повторно. Файл `supabase-config.js` содержит только URL и публичный publishable key; секретный `service_role` ключ браузеру не требуется.
 
 В настройках Supabase Auth добавьте `https://turkmeno98.github.io/delta/` в список разрешённых Redirect URLs, чтобы подтверждение регистрации возвращало пользователя в приложение.
 
