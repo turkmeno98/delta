@@ -183,7 +183,7 @@
   }
   function updateKindOptions() {
     const select=$('operation-kind'), previous=select.value;
-    select.innerHTML=state.kinds.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+    const names=[...state.kinds];for(const campaign of state.campaigns)if(!names.some(name=>name.toLocaleLowerCase('ru')===campaign.name.toLocaleLowerCase('ru')))names.push(campaign.name);select.innerHTML=names.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
     if(state.kinds.includes(previous)) select.value=previous;
   }
   function updateOperationTypeOptions() {
@@ -213,7 +213,7 @@
   $('status-filters').addEventListener('click',e=>{const btn=e.target.closest('[data-filter]');if(!btn)return;activeFilter=btn.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===btn));render();});
   $('field-name').addEventListener('input',()=>{const f=state.fields.find(x=>x.id===selectedId);if(!f)return;f.name=$('field-name').value.trim()||f.sourceId; $('dialog-title').textContent=f.name; const layer=layerById.get(f.id);if(layer)layer.setTooltipContent(escapeHtml(f.name)); save();});
   $('done-button').addEventListener('click',()=>{const f=state.fields.find(x=>x.id===selectedId);if(f){f.name=$('field-name').value.trim()||f.sourceId;save();} $('field-dialog').close();});
-  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();updateOperationTypeOptions();$('operation-form').reset();$('operation-area').value='';$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
+  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();updateOperationTypeOptions();$('operation-form').reset();$('operation-status').value='done';$('operation-area').value='';$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
   $('operation-type').addEventListener('change',()=>{
     const type=$('operation-type').value;
     $('seed-fields').hidden=type!=='seeding'; $('chemical-fields').hidden=type!=='chemical';
