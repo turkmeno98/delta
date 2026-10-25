@@ -20,6 +20,14 @@
   let activeFilter = 'all';
   let selectedId = null;
   let toastTimer;
+  let supabaseClient = null;
+  let currentSession = null;
+  let currentFarmId = null;
+  let saveTimer = null;
+  let realtimeChannel = null;
+  let authBusy = false;
+  let hasMigratedLocalData = localStorage.getItem('field-operations-cloud-migrated-v1') === 'true';
+  const deviceId = localStorage.getItem('field-operations-device-v1') || (() => { const value = uid(); localStorage.setItem('field-operations-device-v1', value); return value; })();
   const layerById = new Map();
   if (L.Control.Draw) {
     new L.Control.Draw({ position: 'topleft', draw: false, edit: { featureGroup: editableFields, remove: false } }).addTo(map);
@@ -32,7 +40,14 @@
       return { fields: Array.isArray(raw.fields) ? raw.fields : [], kinds: Array.isArray(raw.kinds) ? raw.kinds : [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES,...customTypes], importedAt: raw.importedAt || '' };
     } catch { return { fields: [], kinds: [...DEFAULT_KINDS], operationTypes:[...DEFAULT_TYPES], importedAt: '' }; }
   }
-  function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render(); }
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    render();
+    if (supabaseClient && currentSession && currentFarmId) {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => { void saveCloudState(); }, 500);
+    }
+  }
   function uid() { return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600); }
@@ -229,6 +244,138 @@
   function renderKinds(){ $('kind-list').innerHTML=state.kinds.map((kind,index)=>`<div class="kind-row"><span>${escapeHtml(kind)}</span><button type="button" data-kind="${index}" aria-label="Удалить ${escapeHtml(kind)}">Удалить</button></div>`).join(''); $('kind-list').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{state.kinds.splice(Number(b.dataset.kind),1);save();renderKinds();})); }
   $('add-kind').addEventListener('click',()=>{renderKinds();$('kinds-dialog').showModal();$('operation-dialog').close();});
   $('save-kind').addEventListener('click',()=>{const input=$('new-kind-name'),name=input.value.trim();if(!name)return;if(!state.kinds.some(k=>k.toLowerCase()===name.toLowerCase()))state.kinds.push(name);input.value='';save();renderKinds();updateKindOptions();toast('Вид операции добавлен');});
+  $('auth-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if(!supabaseClient){setAuthMessage('Подключение к общей базе не настроено. Обновите страницу или сообщите владельцу сайта.');return;}
+    setAuthMessage('Выполняется вход…');
+    const {error}=await supabaseClient.auth.signInWithPassword({email:$('auth-email').value.trim(),password:$('auth-password').value});
+    if(error)setAuthMessage(authError(error));
+  });
+  $('signup-button').addEventListener('click', async()=>{
+    if(!supabaseClient){setAuthMessage('Подключение к общей базе не настроено.');return;}
+    const email=$('auth-email').value.trim(),password=$('auth-password').value;
+    if(!email||password.length<6){setAuthMessage('Введите электронную почту и пароль не короче 6 символов.');return;}
+    setAuthMessage('Создаём аккаунт…');
+    const redirect=new URL(location.href); const pendingInvite=new URLSearchParams(location.search).get('invite'); if(pendingInvite)redirect.searchParams.set('invite',pendingInvite);
+    const {data,error}=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:redirect.toString()}});
+    if(error){setAuthMessage(authError(error));return;}
+    if(!data.session)setAuthMessage('Аккаунт создан. Подтвердите адрес по ссылке из письма, затем войдите сюда.');
+  });
+  $('farm-setup-form').addEventListener('submit',async event=>{
+    event.preventDefault(); if(!supabaseClient||!currentSession)return;
+    const {data,error}=await supabaseClient.rpc('create_field_ops_farm',{p_name:$('farm-name').value.trim()});
+    if(error){$('farm-message').textContent=authError(error);return;}
+    await openFarm(data);
+  });
+  $('logout-button').addEventListener('click',()=>supabaseClient?.auth.signOut());
+  $('collab-button').addEventListener('click',()=>{$('account-email').textContent=currentSession?.user?.email||'';$('invite-result').hidden=true;$('collab-dialog').showModal();});
+  $('create-invite').addEventListener('click',async()=>{
+    if(!currentFarmId)return;
+    const token=uid();
+    const {error}=await supabaseClient.rpc('create_field_ops_invite',{p_farm_id:currentFarmId,p_token:token,p_role:$('invite-role').value});
+    if(error){toast(authError(error));return;}
+    const link=new URL(location.href); link.searchParams.set('invite',token);
+    $('invite-link').value=link.toString(); $('invite-result').hidden=false;
+  });
+  $('copy-invite').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('invite-link').value);toast('Ссылка скопирована');}catch{ $('invite-link').select(); document.execCommand('copy'); toast('Ссылка скопирована'); }});
   rebuildMap(); render();
+  void initializeSharedApp();
+
+  function setAuthMessage(message){$('auth-message').textContent=message;}
+  function authError(error){return String(error?.message||'Не удалось выполнить действие.').replace(/\s+/g,' ').slice(0,240);}
+  async function initializeSharedApp(){
+    const config=window.SUPABASE_CONFIG||{},url=String(config.url||'').trim(),key=String(config.publishableKey||config.anonKey||'').trim();
+    if(!url||!key||!window.supabase?.createClient){setAuthMessage('Не удалось подключиться к Supabase. Проверьте настройки и интернет.');return;}
+    supabaseClient=window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    supabaseClient.auth.onAuthStateChange((_event,session)=>{window.setTimeout(()=>{void handleSession(session);},0);});
+    const {data,error}=await supabaseClient.auth.getSession();
+    if(error){setAuthMessage(authError(error));return;}
+    if(data.session)await handleSession(data.session);
+  }
+  async function handleSession(session){
+    if(authBusy)return;
+    if(!session){
+      const signedOut=Boolean(currentSession);
+      currentSession=null;currentFarmId=null;$('app-shell').hidden=true;$('auth-gate').hidden=false;$('auth-form').hidden=false;$('farm-setup-form').hidden=true;
+      if(signedOut){state={fields:[],kinds:[...DEFAULT_KINDS],operationTypes:[...DEFAULT_TYPES],importedAt:''};rebuildMap();render();}
+      return;
+    }
+    if(currentFarmId&&currentSession?.user?.id===session.user.id)return;
+    authBusy=true; currentSession=session;
+    try{
+      const inviteToken=new URLSearchParams(location.search).get('invite');let invitedFarmId=null;
+      if(inviteToken){
+        const {data,error}=await supabaseClient.rpc('redeem_field_ops_invite',{p_token:inviteToken});
+        if(error)toast(authError(error));
+        else invitedFarmId=data;
+        const nextUrl=new URL(location.href);nextUrl.searchParams.delete('invite');history.replaceState({},'',nextUrl.toString());
+      }
+      const {data:farms,error}=await supabaseClient.from('farms').select('id,name').order('name');
+      if(error)throw error;
+      if(!farms?.length){$('auth-form').hidden=true;$('farm-setup-form').hidden=false;setAuthMessage('');return;}
+      const selectedFarm=farms.find(farm=>farm.id===invitedFarmId)||farms[0];
+      await openFarm(selectedFarm.id,selectedFarm.name);
+    }catch(error){currentFarmId=null;setAuthMessage(`Не удалось открыть общее хозяйство: ${authError(error)}. Установите миграцию базы данных.`);}
+    finally{authBusy=false;}
+  }
+  async function openFarm(farmId,farmName=''){
+    currentFarmId=farmId;
+    const [{data:rows,error:fieldsError},{data:settingsRow,error:settingsError}]=await Promise.all([
+      supabaseClient.from('field_ops_fields').select('id,source_id,name,geometry,area,operations,color').eq('farm_id',farmId),
+      supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',farmId).maybeSingle()
+    ]);
+    if(fieldsError)throw fieldsError;if(settingsError)throw settingsError;
+    const local=hasMigratedLocalData?{fields:[],kinds:[...DEFAULT_KINDS],operationTypes:[...DEFAULT_TYPES],importedAt:''}:state;
+    state=local;
+    if(rows?.length){
+      const cloud=rows.map(row=>({...row,sourceId:row.source_id,area:Number(row.area)||0,operations:Array.isArray(row.operations)?row.operations:[]}));
+      const known=new Set(cloud.map(field=>field.id));
+      state.fields=[...cloud,...local.fields.filter(field=>!known.has(field.id))];
+    }else if(local.fields.length){state.fields=local.fields;}
+    if(settingsRow){state.kinds=settingsRow.kinds||[...DEFAULT_KINDS];state.operationTypes=settingsRow.operation_types||[...DEFAULT_TYPES];state.importedAt=settingsRow.imported_at||'';}
+    currentFarmId=farmId;
+    if(!rows?.length||state.fields.some(field=>!(rows||[]).some(row=>row.id===field.id))){
+      const saved=await saveCloudState();
+      if(!saved)throw new Error('Не удалось сохранить данные в общей базе. Локальная копия сохранена.');
+    }
+    hasMigratedLocalData=true;localStorage.setItem('field-operations-cloud-migrated-v1','true');
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+    $('farm-caption').textContent=farmName||'Общие данные хозяйства';
+    $('account-email').textContent=currentSession?.user?.email||'';
+    $('auth-gate').hidden=true;$('app-shell').hidden=false;
+    rebuildMap();render();map.invalidateSize();subscribeToFarm();
+    toast('Данные синхронизируются через общую базу');
+  }
+  async function saveCloudState(){
+    if(!supabaseClient||!currentSession||!currentFarmId)return;
+    const fields=state.fields.map(field=>({id:field.id,farm_id:currentFarmId,source_id:field.sourceId||'',name:field.name||'Поле',geometry:field.geometry,area:Number(field.area)||0,operations:field.operations||[],color:field.color||null,updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId}));
+    for(let i=0;i<fields.length;i+=100){const {error}=await supabaseClient.from('field_ops_fields').upsert(fields.slice(i,i+100),{onConflict:'id'});if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}}
+    const {error}=await supabaseClient.from('field_ops_settings').upsert({farm_id:currentFarmId,kinds:state.kinds,operation_types:state.operationTypes,imported_at:state.importedAt||'',updated_at:new Date().toISOString(),updated_by:currentSession.user.id,device_id:deviceId},{onConflict:'farm_id'});
+    if(error){toast(`Ошибка синхронизации: ${authError(error)}`);return false;}
+    return true;
+  }
+  function subscribeToFarm(){
+    if(realtimeChannel)supabaseClient.removeChannel(realtimeChannel);
+    realtimeChannel=supabaseClient.channel(`field-ops-${currentFarmId}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'field_ops_fields',filter:`farm_id=eq.${currentFarmId}`},event=>{
+        if(event.new?.device_id===deviceId)return;
+        void refreshCloudState();
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'field_ops_settings',filter:`farm_id=eq.${currentFarmId}`},event=>{
+        if(event.new?.device_id===deviceId)return;
+        void refreshCloudState();
+      }).subscribe();
+  }
+  async function refreshCloudState(){
+    if(!currentFarmId)return;
+    const [{data:rows},{data:settings}]=await Promise.all([
+      supabaseClient.from('field_ops_fields').select('id,source_id,name,geometry,area,operations,color').eq('farm_id',currentFarmId),
+      supabaseClient.from('field_ops_settings').select('kinds,operation_types,imported_at').eq('farm_id',currentFarmId).maybeSingle()
+    ]);
+    if(!rows)return;
+    state.fields=rows.map(row=>({...row,sourceId:row.source_id,area:Number(row.area)||0,operations:Array.isArray(row.operations)?row.operations:[]}));
+    if(settings){state.kinds=settings.kinds||[...DEFAULT_KINDS];state.operationTypes=settings.operation_types||[...DEFAULT_TYPES];state.importedAt=settings.imported_at||'';}
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(state));rebuildMap();render();
+  }
 })();
 
