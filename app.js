@@ -30,9 +30,8 @@
   let hasMigratedLocalData = localStorage.getItem('field-operations-cloud-migrated-v1') === 'true';
   const deviceId = localStorage.getItem('field-operations-device-v1') || (() => { const value = uid(); localStorage.setItem('field-operations-device-v1', value); return value; })();
   const layerById = new Map();
-  if (L.Control.Draw) {
-    new L.Control.Draw({ position: 'topleft', draw: false, edit: { featureGroup: editableFields, remove: false } }).addTo(map);
-  }
+  let shapeEditFieldId = null;
+  let shapeEditOriginal = null;
 
   function loadState() {
     try {
@@ -65,6 +64,10 @@
     if (!rings?.length) return 0;
     return Math.max(0, ringArea(rings[0]) - rings.slice(1).reduce((n,r) => n + ringArea(r), 0)) / 10000;
   }
+  function areaHaFromName(name) {
+    const match=String(name||'').match(/\/\s*(\d+(?:[.,]\d+)?)/);
+    return match ? Number(match[1].replace(',','.')) : 0;
+  }
   function parseCoordinates(text) {
     return (text || '').trim().split(/\s+/).map(pair => pair.split(',').slice(0,2).map(Number)).filter(p => p.length===2 && p.every(Number.isFinite));
   }
@@ -84,7 +87,8 @@
         const cleanDescription = description.replace(/<br\s*\/?\s*>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
         const label = cleanDescription || name || `Поле ${index+1}`;
         const num = index+1;
-        parsed.push({ id: uid(), sourceId: label, name: name || cleanDescription.replace(/\s*№.*$/,'') || `Поле ${num}${partIndex ? ` · ${partIndex+1}` : ''}`, geometry: rings, area: areaHa(rings), operations: [], color: COLORS[index % COLORS.length] });
+        const fieldName=name || cleanDescription.replace(/\s*№.*$/,'') || `Поле ${num}${partIndex ? ` · ${partIndex+1}` : ''}`;
+        parsed.push({ id: uid(), sourceId: label, name: fieldName, geometry: rings, area: areaHaFromName(fieldName), operations: [], color: COLORS[index % COLORS.length] });
       });
     });
     if (!parsed.length) throw new Error('В KML нет полигонов с координатами.');
@@ -112,19 +116,49 @@
       map.fitBounds(group.getBounds(), { padding:[24,24], maxZoom:14 });
     }
   }
+  function finishShapeEdit(saveChanges) {
+    if(!shapeEditFieldId)return;
+    const field=state.fields.find(item=>item.id===shapeEditFieldId),layer=layerById.get(shapeEditFieldId);
+    if(layer?.editing?.enabled())layer.editing.disable();
+    if(field&&layer){
+      if(saveChanges){
+        const geometry=layer.toGeoJSON().geometry;
+        if(geometry?.type==='Polygon')field.geometry=geometry.coordinates;
+      }else if(shapeEditOriginal){
+        field.geometry=shapeEditOriginal;
+        layer.setLatLngs(shapeLatLngs(field));
+      }
+      const tooltip=layer.getTooltip();
+      if(tooltip)tooltip.setLatLng(layer.getBounds().getCenter());
+      layer.redraw();
+    }
+    $('shape-edit-tools').hidden=true;
+    shapeEditFieldId=null;shapeEditOriginal=null;
+    if(saveChanges){save();toast('Границы поля сохранены');}
+    else toast('Изменение границ отменено');
+  }
+  function beginShapeEdit() {
+    const field=state.fields.find(item=>item.id===selectedId),layer=field&&layerById.get(field.id);
+    if(!field||!layer?.editing){toast('Не удалось включить редактирование этого поля');return;}
+    shapeEditFieldId=field.id;
+    shapeEditOriginal=JSON.parse(JSON.stringify(field.geometry));
+    $('field-dialog').close();
+    $('shape-edit-tools').hidden=false;
+    layer.editing.enable();
+    map.flyToBounds(layer.getBounds(),{padding:[90,90],maxZoom:16,duration:.35});
+    toast('Перетаскивайте точки только у выбранного поля');
+  }
   map.on(L.Draw?.Event?.EDITED || 'draw:edited', event => {
     event.layers.eachLayer(layer => {
-      const field = state.fields.find(item => item.id === layer._fieldId);
-      if (!field) return;
-      const geometry = layer.toGeoJSON().geometry;
-      if (geometry?.type !== 'Polygon') return;
-      field.geometry = geometry.coordinates;
-      field.area = areaHa(field.geometry);
-      const tooltip = layer.getTooltip();
-      if (tooltip) tooltip.setLatLng(layer.getBounds().getCenter());
+      const field=state.fields.find(item=>item.id===layer._fieldId);
+      if(!field)return;
+      const geometry=layer.toGeoJSON().geometry;
+      if(geometry?.type==='Polygon')field.geometry=geometry.coordinates;
+      const tooltip=layer.getTooltip();
+      if(tooltip)tooltip.setLatLng(layer.getBounds().getCenter());
     });
     save();
-    toast('Границы и площадь полей сохранены в этом браузере');
+    toast('Границы поля сохранены');
   });
   function latestOperation(field) {
     const operations = [...field.operations].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
@@ -132,6 +166,7 @@
   }
   function displayOperation(op) { if (!op) return 'Пока без операций'; const status = {planned:'запланировано',active:'в работе',done:'завершено'}[op.status] || ''; return `${op.kind} · ${status}`; }
   function render() {
+    state.fields.forEach(field=>{field.area=areaHaFromName(field.name);});
     $('field-count').textContent = state.fields.length;
     const active = state.fields.filter(f => operationState(f)==='active').length;
     const planned = state.fields.filter(f => operationState(f)==='planned').length;
@@ -150,14 +185,14 @@
       const op = latestOperation(f), status = operationState(f);
       const stateLabel = status==='active' ? 'В работе' : status==='planned' ? 'Запланировано' : op ? 'Завершено' : 'Без работ';
       const number = (f.name.match(/[\d]+/) || [''])[0];
-      return `<article class="field-card ${f.id===selectedId?'selected':''}" data-id="${escapeHtml(f.id)}"><span class="field-swatch" style="background:${fieldColor(f)}22;color:${fieldColor(f)}">${escapeHtml(number || '⌑')}</span><span class="field-card-main"><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(displayOperation(op))}</small></span><span class="field-card-side"><strong>${f.area.toFixed(1)} га</strong><span class="state-pill ${status==='active'?'active':op?.status==='done'?'done':''}">${stateLabel}</span></span></article>`;
+      return `<article class="field-card ${f.id===selectedId?'selected':''}" data-id="${escapeHtml(f.id)}"><span class="field-swatch" style="background:${fieldColor(f)}22;color:${fieldColor(f)}">${escapeHtml(number || '⌑')}</span><span class="field-card-main"><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(displayOperation(op))}</small></span><span class="field-card-side"><strong>${fmt(areaHaFromName(f.name))} га</strong><span class="state-pill ${status==='active'?'active':op?.status==='done'?'done':''}">${stateLabel}</span></span></article>`;
     }).join('');
     host.querySelectorAll('.field-card').forEach(card => card.addEventListener('click', () => openField(card.dataset.id)));
     state.fields.forEach(field => { const layer=layerById.get(field.id); if(layer) layer.setStyle(polygonStyle(field,field.id===selectedId)); });
   }
   function openField(id) {
     const field=state.fields.find(f=>f.id===id); if(!field) return;
-    selectedId=id; $('dialog-title').textContent=field.name; $('field-name').value=field.name; $('field-area').textContent=`${field.area.toFixed(2)} га`; $('field-source-id').textContent=field.sourceId || 'Импортированное поле';
+    selectedId=id; $('dialog-title').textContent=field.name; $('field-name').value=field.name; $('field-area').textContent=`${fmt(areaHaFromName(field.name))} га`; $('field-source-id').textContent=field.sourceId || 'Импортированное поле';
     renderOperations(field); $('field-dialog').showModal();
     const layer=layerById.get(id); if(layer) map.flyToBounds(layer.getBounds(), {padding:[50,50],maxZoom:15,duration:.45});
     render();
@@ -212,8 +247,11 @@
   });
   $('field-search').addEventListener('input',render);
   $('status-filters').addEventListener('click',e=>{const btn=e.target.closest('[data-filter]');if(!btn)return;activeFilter=btn.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===btn));render();});
-  $('field-name').addEventListener('input',()=>{const f=state.fields.find(x=>x.id===selectedId);if(!f)return;f.name=$('field-name').value.trim()||f.sourceId; $('dialog-title').textContent=f.name; const layer=layerById.get(f.id);if(layer)layer.setTooltipContent(escapeHtml(f.name)); save();});
-  $('done-button').addEventListener('click',()=>{const f=state.fields.find(x=>x.id===selectedId);if(f){f.name=$('field-name').value.trim()||f.sourceId;save();} $('field-dialog').close();});
+  $('field-name').addEventListener('input',()=>{const f=state.fields.find(x=>x.id===selectedId);if(!f)return;f.name=$('field-name').value.trim()||f.sourceId; f.area=areaHaFromName(f.name); $('dialog-title').textContent=f.name; $('field-area').textContent=`${fmt(f.area)} га`; const layer=layerById.get(f.id);if(layer)layer.setTooltipContent(escapeHtml(f.name)); save();});
+  $('done-button').addEventListener('click',()=>{const f=state.fields.find(x=>x.id===selectedId);if(f){f.name=$('field-name').value.trim()||f.sourceId;f.area=areaHaFromName(f.name);save();} $('field-dialog').close();});
+  $('edit-field-shape').addEventListener('click',beginShapeEdit);
+  $('save-shape-edit').addEventListener('click',()=>finishShapeEdit(true));
+  $('cancel-shape-edit').addEventListener('click',()=>finishShapeEdit(false));
   $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();updateOperationTypeOptions();$('operation-form').reset();$('operation-status').value='done';$('operation-area').value='';$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
   $('operation-type').addEventListener('change',()=>{
     const type=$('operation-type').value;
@@ -358,7 +396,7 @@
       toast('Сводка сохранена как PNG');
     },'image/png');
   }
-  function addShiftFieldRow(){const row=document.createElement('div');row.className='shift-field-row';row.innerHTML=`<select aria-label="Поле"><option value="">Выберите поле</option>${state.fields.map(field=>`<option value="${escapeHtml(field.id)}">${escapeHtml(field.name)} · ${Number(field.area||0).toFixed(1)} га</option>`).join('')}</select><input type="number" min="0.1" step="0.1" placeholder="га" aria-label="Гектары"><button type="button" aria-label="Убрать поле">×</button>`;row.querySelector('button').addEventListener('click',()=>row.remove());$('shift-fields').append(row);}
+  function addShiftFieldRow(){const row=document.createElement('div');row.className='shift-field-row';row.innerHTML=`<select aria-label="Поле"><option value="">Выберите поле</option>${state.fields.map(field=>`<option value="${escapeHtml(field.id)}">${escapeHtml(field.name)} · ${areaHaFromName(field.name).toFixed(1)} га</option>`).join('')}</select><input type="number" min="0.1" step="0.1" placeholder="га" aria-label="Гектары"><button type="button" aria-label="Убрать поле">×</button>`;row.querySelector('button').addEventListener('click',()=>row.remove());$('shift-fields').append(row);}
   function renderReport(){if(!$('report-date').value)return;const date=$('report-date').value,year=date.slice(0,4),today=state.shiftLogs.filter(log=>log.workDate===date),campaigns=state.campaigns,performed=op=>op.status!=='planned'&&(Number(op.area)||0)>0,hasWorkToday=c=>today.some(log=>log.campaignId===c.id&&log.fields.some(f=>(Number(f.area)||0)>0))||state.fields.some(field=>(field.operations||[]).some(op=>op.date===date&&performed(op)&&String(op.kind||'').toLocaleLowerCase('ru')===c.name.toLocaleLowerCase('ru'))),activeCampaigns=campaigns.filter(hasWorkToday);
     $('shift-campaign').innerHTML=activeCampaigns.length?activeCampaigns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join(''):'<option value="">Сначала добавьте план</option>';
     if(!$('shift-fields').children.length)addShiftFieldRow();
@@ -430,7 +468,7 @@
     if(settingsRow){state.kinds=settingsRow.kinds||[...DEFAULT_KINDS];state.operationTypes=settingsRow.operation_types||[...DEFAULT_TYPES];state.importedAt=settingsRow.imported_at||'';}
     state.campaigns=campaignRows.map(row=>({id:row.id,name:row.name,planArea:Number(row.plan_area)||0}));state.shiftLogs=shiftRows.map(row=>({id:row.id,workDate:row.work_date,shift:row.shift,campaignId:row.campaign_id,aggregateCount:Number(row.aggregate_count)||0,fields:Array.isArray(row.field_entries)?row.field_entries:[]}));state.rainfallLogs=rainRows.map(row=>({id:row.id,workDate:row.work_date,settlement:row.settlement,amountMm:Number(row.amount_mm)||0}));
     currentFarmId=farmId;
-    if(!rows?.length||state.fields.some(field=>!(rows||[]).some(row=>row.id===field.id))){
+    if(!rows?.length||state.fields.some(field=>{const row=(rows||[]).find(item=>item.id===field.id);return !row||Math.abs((Number(row.area)||0)-areaHaFromName(field.name))>0.05;})){
       const saved=await saveCloudState();
       if(!saved)throw new Error('Не удалось сохранить данные в общей базе. Локальная копия сохранена.');
     }
