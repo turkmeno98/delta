@@ -35,6 +35,7 @@
     <div class="top-summary"><span class="live-dot"></span><span id="summary-text">Загрузите карту полей</span></div>
     <label class="upload-button" for="kml-input">＋ Импортировать KML</label>
     <input id="kml-input" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml">
+    <button class="secondary-button" id="report-button" type="button">Сводка и журнал</button>
     <button class="icon-button" id="collab-button" title="Участники хозяйства" aria-label="Участники хозяйства">♧</button>
     <button class="icon-button" id="logout-button" title="Выйти из аккаунта" aria-label="Выйти из аккаунта">↪</button>
     <button class="icon-button" id="settings-button" title="Справочник операций" aria-label="Справочник операций">☷</button>
@@ -107,6 +108,12 @@
       <div id="invite-result" class="invite-result" hidden><input id="invite-link" readonly aria-label="Ссылка-приглашение"><button type="button" class="secondary-button" id="copy-invite">Копировать</button></div>
       <div class="dialog-footer"><span>Владелец аккаунта: <b id="account-email"></b></span><button class="secondary-button" value="close">Закрыть</button></div>
     </form>
+  </dialog>
+  <dialog id="report-dialog" class="report-dialog">
+    <div class="report-head"><div><span class="eyebrow">РАБОТЫ ХОЗЯЙСТВА</span><h2>Сводка и журнал</h2></div><button class="close-button" id="close-report" aria-label="Закрыть">×</button></div>
+    <div class="report-toolbar"><label>Производственная дата<input type="date" id="report-date"></label><div><button class="secondary-button report-tab active" data-tab="summary">Сводка</button><button class="secondary-button report-tab" data-tab="journal">Журнал</button></div></div>
+    <section id="summary-view"><div id="summary-content"></div><details class="entry-panel"><summary>Настроить план работ</summary><form id="campaign-form" class="entry-form"><label>Работа<input id="campaign-name" required placeholder="Например, Сев озимой пшеницы"></label><label>План, га<input id="campaign-plan" type="number" min="0" step="0.1" required></label><button class="primary-button">Сохранить план</button></form></details><details class="entry-panel"><summary>Добавить сменную запись</summary><form id="shift-form" class="entry-form"><label>Работа<select id="shift-campaign" required></select></label><label>Смена<select id="shift-kind"><option value="day">Дневная · 07:00–17:00</option><option value="night">Ночная · 18:00–06:59</option></select></label><label>Работало агрегатов<input id="shift-aggregates" type="number" min="0" step="1" required value="1"></label><div id="shift-fields"></div><button type="button" class="secondary-button" id="add-shift-field">＋ Добавить поле</button><button class="primary-button">Сохранить смену</button></form></details><details class="entry-panel"><summary>Добавить осадки</summary><form id="rain-form" class="entry-form"><label>Населённый пункт<input id="rain-settlement" required placeholder="Кленовка"></label><label>За сутки, мм<input id="rain-amount" type="number" min="0" step="0.1" required></label><button class="primary-button">Сохранить осадки</button></form></details></section>
+    <section id="journal-view" hidden></section>
   </dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
