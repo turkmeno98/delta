@@ -48,7 +48,7 @@
       <div class="dialog-head"><div><span class="eyebrow">НОВАЯ РАБОТА</span><h2>Добавить операцию</h2></div><button class="close-button" value="cancel">×</button></div>
       <label class="form-label">Название<select id="operation-kind"></select></label>
       <button type="button" id="add-kind" class="text-button">＋ Создать свой вид операции</button>
-      <label class="form-label">Тип<select id="operation-type"><option value="other">Другая работа</option><option value="seeding">Сев</option><option value="chemical">Химическая обработка</option></select></label>
+      <div class="form-label type-picker"><label for="operation-type">Тип операции</label><button type="button" id="add-operation-type" class="text-button">＋ Добавить тип</button><select id="operation-type"></select></div>
       <div id="seed-fields" class="conditional" hidden>
         <label class="form-label">Культура<input id="seed-crop" maxlength="80" placeholder="Например, пшеница"></label>
         <label class="form-label">Сорт<input id="seed-variety" maxlength="80" placeholder="Название сорта"></label>
@@ -63,6 +63,13 @@
       <label class="form-label">Дата<input id="operation-date" type="date"></label>
       <label class="form-label">Заметка<textarea id="operation-note" rows="2" placeholder="Препарат, сорт, техника, примечания..."></textarea></label>
       <div class="dialog-footer"><button type="button" id="cancel-operation" class="secondary-button">Отмена</button><button type="submit" class="primary-button">Сохранить работу</button></div>
+    </form>
+  </dialog>
+  <dialog id="type-dialog" class="operation-dialog">
+    <form method="dialog" id="type-form">
+      <div class="dialog-head"><div><span class="eyebrow">СПРАВОЧНИК ТИПОВ</span><h2>Новый тип операции</h2></div><button class="close-button" value="cancel">×</button></div>
+      <label class="form-label">Название типа<input id="new-type-name" maxlength="60" placeholder="Например, Полив"></label>
+      <div class="dialog-footer"><button type="button" id="cancel-type" class="secondary-button">Отмена</button><button type="submit" class="primary-button">Добавить тип</button></div>
     </form>
   </dialog>
   <dialog id="kinds-dialog" class="kinds-dialog">
