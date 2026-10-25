@@ -73,7 +73,7 @@
   function polygonStyle(field, selected=false) { return { color: selected ? '#294e32' : '#fff', weight: selected ? 3 : 1.6, opacity: .95, fillColor: fieldColor(field), fillOpacity: selected ? .67 : .48 }; }
   function addLayer(field) {
     const polygon = L.polygon(shapeLatLngs(field), polygonStyle(field)).addTo(map);
-    polygon.bindTooltip(escapeHtml(field.name), { sticky:true, direction:'top' });
+    polygon.bindTooltip(escapeHtml(field.name), { permanent:true, direction:'center', className:'field-map-label', opacity:.96, interactive:false });
     polygon.on('click', () => openField(field.id));
     layerById.set(field.id, polygon);
   }
@@ -126,8 +126,14 @@
     if(!field.operations.length) { host.innerHTML='<div class="empty-state" style="padding:22px 10px">Работы пока не добавлены.</div>'; return; }
     host.innerHTML=[...field.operations].reverse().map(op=>{
       const details=[];
-      if(op.type==='seeding' && (op.product || op.amount)) details.push([op.product,op.amount ? `${op.amount} ${op.unit||''}` : ''].filter(Boolean).join(' · '));
-      if(op.type==='chemical' && (op.product || op.amount)) details.push([op.product,op.amount ? `${op.amount} ${op.unit||''}` : ''].filter(Boolean).join(' · '));
+      if(op.type==='seeding' && (op.crop || op.variety || op.product || op.amount)) {
+        const cropAndVariety=[op.crop,op.variety].filter(Boolean).join(' · ') || op.product || '';
+        details.push([cropAndVariety,op.amount ? `${op.amount} ${op.unit||'кг'}` : ''].filter(Boolean).join(' — '));
+      }
+      if(op.type==='chemical') {
+        const products=Array.isArray(op.products) ? op.products : (op.product || op.amount ? [{name:op.product,amount:op.amount,unit:op.unit}] : []);
+        products.forEach(product=>details.push([product.name,product.amount ? `${product.amount} ${product.unit||''}` : ''].filter(Boolean).join(' — ')));
+      }
       if(op.date) details.push(new Date(`${op.date}T12:00:00`).toLocaleDateString('ru-RU'));
       if(op.note) details.push(op.note);
       return `<div class="operation-item"><div><strong>${escapeHtml(op.kind)}</strong><small>${escapeHtml(details.join(' · ') || 'Без дополнительных данных')}</small></div><span class="op-chip">${{planned:'План',active:'В работе',done:'Готово'}[op.status]}</span><button type="button" class="remove-op" data-op="${escapeHtml(op.id)}">Удалить</button></div>`;
@@ -138,6 +144,13 @@
     const select=$('operation-kind'), previous=select.value;
     select.innerHTML=state.kinds.map(k=>`<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
     if(state.kinds.includes(previous)) select.value=previous;
+  }
+  function addChemicalRow(values={}) {
+    const row=document.createElement('div'); row.className='chemical-product-row';
+    row.innerHTML=`<input data-chemical-name maxlength="80" aria-label="Название СЗР" placeholder="Название препарата" value="${escapeHtml(values.name||'')}"><input data-chemical-amount type="number" min="0" step="0.1" aria-label="Количество СЗР" placeholder="Количество" value="${escapeHtml(values.amount||'')}"><select data-chemical-unit aria-label="Единица СЗР"><option value="л">л</option><option value="кг">кг</option><option value="л/га">л/га</option><option value="кг/га">кг/га</option></select><button type="button" class="remove-chemical" aria-label="Удалить препарат">×</button>`;
+    $('chemical-product-list').append(row);
+    row.querySelector('[data-chemical-unit]').value=values.unit||'л';
+    row.querySelector('.remove-chemical').addEventListener('click',()=>row.remove());
   }
   $('kml-input').addEventListener('change', async event => {
     const file=event.target.files?.[0]; if(!file) return;
@@ -154,14 +167,21 @@
   $('status-filters').addEventListener('click',e=>{const btn=e.target.closest('[data-filter]');if(!btn)return;activeFilter=btn.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===btn));render();});
   $('field-name').addEventListener('input',()=>{const f=state.fields.find(x=>x.id===selectedId);if(!f)return;f.name=$('field-name').value.trim()||f.sourceId; $('dialog-title').textContent=f.name; const layer=layerById.get(f.id);if(layer)layer.setTooltipContent(escapeHtml(f.name)); save();});
   $('done-button').addEventListener('click',()=>{const f=state.fields.find(x=>x.id===selectedId);if(f){f.name=$('field-name').value.trim()||f.sourceId;save();} $('field-dialog').close();});
-  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();$('operation-form').reset();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
-  $('operation-type').addEventListener('change',()=>{$('seed-fields').hidden=$('operation-type').value!=='seeding';$('chemical-fields').hidden=$('operation-type').value!=='chemical';});
+  $('add-operation').addEventListener('click',()=>{if(!state.kinds.length)state.kinds=[...DEFAULT_KINDS];updateKindOptions();$('operation-form').reset();$('chemical-product-list').replaceChildren();$('operation-date').value=new Date().toISOString().slice(0,10);$('seed-fields').hidden=true;$('chemical-fields').hidden=true;$('operation-dialog').showModal();});
+  $('operation-type').addEventListener('change',()=>{
+    const type=$('operation-type').value;
+    $('seed-fields').hidden=type!=='seeding'; $('chemical-fields').hidden=type!=='chemical';
+    if(type==='chemical' && !$('chemical-product-list').children.length) addChemicalRow();
+  });
+  $('add-chemical-product').addEventListener('click',()=>addChemicalRow());
   $('operation-form').addEventListener('submit',e=>{
     e.preventDefault(); const field=state.fields.find(x=>x.id===selectedId); if(!field)return;
-    const type=$('operation-type').value, product=type==='seeding'?$('seed-product').value.trim():type==='chemical'?$('chemical-product').value.trim():'';
-    const amount=type==='seeding'?$('seed-amount').value:type==='chemical'?$('chemical-amount').value:'';
-    const unit=type==='seeding'?$('seed-unit').value:type==='chemical'?$('chemical-unit').value:'';
-    field.operations.push({id:uid(),kind:$('operation-kind').value||'Работа',type,status:$('operation-status').value,date:$('operation-date').value,product,amount,unit,note:$('operation-note').value.trim()});
+    const type=$('operation-type').value;
+    const products=type==='chemical'?[...$('chemical-product-list').querySelectorAll('.chemical-product-row')].map(row=>({name:row.querySelector('[data-chemical-name]').value.trim(),amount:row.querySelector('[data-chemical-amount]').value,unit:row.querySelector('[data-chemical-unit]').value})).filter(item=>item.name||item.amount):[];
+    const crop=type==='seeding'?$('seed-crop').value.trim():'';
+    const variety=type==='seeding'?$('seed-variety').value.trim():'';
+    const amount=type==='seeding'?$('seed-amount').value:'';
+    field.operations.push({id:uid(),kind:$('operation-kind').value||'Работа',type,status:$('operation-status').value,date:$('operation-date').value,crop,variety,product:type==='seeding'?[crop,variety].filter(Boolean).join(' · '):'',amount,unit:type==='seeding'?'кг':'',products,note:$('operation-note').value.trim()});
     save();renderOperations(field);$('operation-dialog').close();toast('Операция добавлена');
   });
   $('cancel-operation').addEventListener('click',()=>$('operation-dialog').close());
