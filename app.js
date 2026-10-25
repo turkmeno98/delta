@@ -222,7 +222,7 @@
   $('add-chemical-product').addEventListener('click',()=>addChemicalRow());
   $('operation-form').addEventListener('submit',e=>{
     e.preventDefault(); const field=state.fields.find(x=>x.id===selectedId); if(!field)return;
-    const type=$('operation-type').value, kind=$('operation-kind').value||'Работа', area=Number($('operation-area').value);
+    const type=$('operation-type').value, kind=$('operation-kind').value||'Работа', area=Number($('operation-area').value), aggregateCount=Math.max(0,Number($('operation-aggregates').value)||0);
     if(!Number.isFinite(area)||area<=0){toast('Укажите обработанную площадь в гектарах');$('operation-area').focus();return;}
     const products=type==='chemical'?[...$('chemical-product-list').querySelectorAll('.chemical-product-row')].map(row=>({name:row.querySelector('[data-chemical-name]').value.trim(),amount:row.querySelector('[data-chemical-amount]').value,unit:row.querySelector('[data-chemical-unit]').value})).filter(item=>item.name||item.amount):[];
     const crop=type==='seeding'?$('seed-crop').value.trim():'';
@@ -230,7 +230,7 @@
     const amount=type==='seeding'?$('seed-amount').value:'';
     const typeName=$('operation-type').selectedOptions[0]?.textContent||'Другая работа';
     if(!state.campaigns.some(item=>item.name.toLocaleLowerCase('ru')===kind.toLocaleLowerCase('ru')))state.campaigns.push({id:uid(),name:kind,planArea:0});
-    field.operations.push({id:uid(),kind,type,typeName,status:$('operation-status').value,date:$('operation-date').value,area,shift:$('operation-shift').value,aggregateCount:1,crop,variety,product:type==='seeding'?[crop,variety].filter(Boolean).join(' · '):'',amount,unit:type==='seeding'?'кг':'',products,note:$('operation-note').value.trim()});
+    field.operations.push({id:uid(),kind,type,typeName,status:$('operation-status').value,date:$('operation-date').value,area,shift:$('operation-shift').value,aggregateCount,crop,variety,product:type==='seeding'?[crop,variety].filter(Boolean).join(' · '):'',amount,unit:type==='seeding'?'кг':'',products,note:$('operation-note').value.trim()});
     save();renderOperations(field);$('operation-dialog').close();toast('Операция добавлена в сводку');
   });
   $('cancel-operation').addEventListener('click',()=>$('operation-dialog').close());
