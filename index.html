@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f5f6f1">
+  <meta name="description" content="Карта полей хозяйства для учета полевых работ, планов, смен, осадков и ежедневных сводок.">
   <title>Поля — журнал работ</title>
   <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" media="print" onload="this.onload=null;this.media='all'">
@@ -39,7 +40,7 @@
   <header class="topbar">
     <a class="brand" href="#"><span class="brand-icon">✳</span><span><b>Поля</b><small>УЧЁТ РАБОТ</small></span></a>
     <div class="top-summary"><span class="live-dot"></span><span id="summary-text">Загрузите карту полей</span></div>
-    <label class="upload-button" for="kml-input" title="Импортировать файл KML"><span class="upload-full">＋ Импортировать KML</span><span class="upload-short">＋ KML</span></label>
+    <button class="upload-button" id="import-button" type="button" title="Импортировать файл KML"><span class="upload-full">＋ Импортировать KML</span><span class="upload-short">＋ KML</span></button>
     <input id="kml-input" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml">
     <button class="secondary-button" id="report-button" type="button" title="Сводка и журнал">Сводка</button>
     <button class="icon-button" id="collab-button" title="Участники хозяйства" aria-label="Участники хозяйства">♧</button>

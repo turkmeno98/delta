@@ -295,6 +295,7 @@
     row.querySelector('[data-chemical-unit]').value=values.unit||'л';
     row.querySelector('.remove-chemical').addEventListener('click',()=>row.remove());
   }
+  $('import-button').addEventListener('click',()=> $('kml-input').click());
   $('kml-input').addEventListener('change', async event => {
     const file=event.target.files?.[0]; if(!file) return;
     try {
