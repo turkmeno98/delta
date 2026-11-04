@@ -33,9 +33,9 @@
   <header class="topbar">
     <a class="brand" href="#"><span class="brand-icon">✳</span><span><b>Поля</b><small>УЧЁТ РАБОТ</small></span></a>
     <div class="top-summary"><span class="live-dot"></span><span id="summary-text">Загрузите карту полей</span></div>
-    <label class="upload-button" for="kml-input">＋ Импортировать KML</label>
+    <label class="upload-button" for="kml-input" title="Импортировать файл KML"><span class="upload-full">＋ Импортировать KML</span><span class="upload-short">＋ KML</span></label>
     <input id="kml-input" type="file" accept=".kml,.xml,application/vnd.google-earth.kml+xml">
-    <button class="secondary-button" id="report-button" type="button">Сводка и журнал</button>
+    <button class="secondary-button" id="report-button" type="button" title="Сводка и журнал">Сводка</button>
     <button class="icon-button" id="collab-button" title="Участники хозяйства" aria-label="Участники хозяйства">♧</button>
     <button class="icon-button" id="logout-button" title="Выйти из аккаунта" aria-label="Выйти из аккаунта">↪</button>
     <button class="icon-button" id="settings-button" title="Справочник операций" aria-label="Справочник операций">☷</button>
@@ -49,7 +49,7 @@
     </section>
     <aside class="sidebar">
       <div class="overview">
-        <div><span class="eyebrow">РАБОЧАЯ КАРТА</span><h1>Поля хозяйства</h1><p id="farm-caption">Импортируйте KML с контурами полей</p></div>
+        <div><span class="eyebrow">Рабочая карта</span><h1>Поля хозяйства</h1><p id="farm-caption">Импортируйте KML с контурами полей</p></div>
         <div class="stat"><strong id="field-count">0</strong><span>полей</span></div>
       </div>
       <div class="search-row"><span>⌕</span><input id="field-search" type="search" placeholder="Найти поле..."></div>
@@ -60,11 +60,11 @@
   </main>
   <dialog id="field-dialog" class="field-dialog">
     <form method="dialog" id="field-form">
-      <div class="dialog-head"><div><span class="eyebrow">КАРТОЧКА ПОЛЯ</span><h2 id="dialog-title">Поле</h2></div><button class="close-button" value="cancel" aria-label="Закрыть">×</button></div>
+      <div class="dialog-head"><div><span class="eyebrow">Карточка поля</span><h2 id="dialog-title">Поле</h2></div><button class="close-button" value="cancel" aria-label="Закрыть">×</button></div>
       <label class="form-label">Название поля<input id="field-name" maxlength="80" placeholder="Например, Северное"></label>
       <div class="field-meta"><span id="field-area">— га</span><span id="field-source-id">Исходное поле</span></div>
       <button type="button" id="edit-field-shape" class="secondary-button shape-edit-button">⌁ Изменить границы этого поля</button>
-      <div class="section-title"><div><span class="eyebrow">РАБОТЫ</span><h3>Операции на поле</h3></div><button type="button" id="add-operation" class="secondary-button">＋ Добавить</button></div>
+      <div class="section-title"><div><h3>Работы</h3></div><button type="button" id="add-operation" class="primary-button">＋ Добавить работу</button></div>
       <div id="operation-list" class="operation-list"></div>
       <div class="dialog-footer"><span>Изменения сохраняются автоматически</span><button type="button" id="done-button" class="primary-button">Готово</button></div>
     </form>
@@ -112,7 +112,7 @@
     </form>
   </dialog>
   <dialog id="report-dialog" class="report-dialog">
-    <div class="report-head"><div><span class="eyebrow">РАБОТЫ ХОЗЯЙСТВА</span><h2>Сводка и журнал</h2></div><button class="close-button" id="close-report" aria-label="Закрыть">×</button></div>
+    <div class="report-head"><div><span class="eyebrow">Рабочие итоги</span><h2>Сводка и журнал</h2></div><button class="close-button" id="close-report" aria-label="Закрыть">×</button></div>
     <div class="report-toolbar"><label>Производственная дата<input type="date" id="report-date"></label><div class="report-actions"><button class="secondary-button report-tab active" data-tab="summary">Сводка</button><button class="secondary-button report-tab" data-tab="journal">Журнал</button><button class="primary-button export-summary-button" id="export-summary" type="button">Скачать PNG</button></div></div>
     <section id="summary-view"><label class="summary-filter-label">Операция в сводке<select id="summary-operation-filter"><option value="all">Все операции</option></select></label><div id="summary-content"></div><details class="entry-panel"><summary>Настроить план работ</summary><p class="subcopy plan-hint">Работы, добавленные на поля, появятся здесь автоматически. Укажите плановые гектары для расчёта сводки.</p><div id="campaign-plan-list" class="campaign-plan-list"></div><form id="campaign-form" class="entry-form"><label>Добавить работу<input id="campaign-name" required placeholder="Например, Сев озимой пшеницы"></label><label>План, га<input id="campaign-plan" type="number" min="0" step="0.1" required></label><button class="primary-button">Добавить план</button></form></details><details class="entry-panel" hidden><summary>Добавить сменную запись</summary><form id="shift-form" class="entry-form"><label>Работа<select id="shift-campaign" required></select></label><label>Смена<select id="shift-kind"><option value="day">Дневная · 07:00–17:00</option><option value="night">Ночная · 18:00–06:59</option></select></label><label>Работало агрегатов<input id="shift-aggregates" type="number" min="0" step="1" required value="1"></label><div id="shift-fields"></div><button type="button" class="secondary-button" id="add-shift-field">＋ Добавить поле</button><button class="primary-button">Сохранить смену</button></form></details><details class="entry-panel"><summary>Добавить осадки</summary><form id="rain-form" class="entry-form"><label>Населённый пункт<input id="rain-settlement" required placeholder="Кленовка"></label><label>За сутки, мм<input id="rain-amount" type="number" min="0" step="0.1" required></label><button class="primary-button">Сохранить осадки</button></form></details></section>
     <section id="journal-view" hidden></section>
