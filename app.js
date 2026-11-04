@@ -33,6 +33,8 @@
   const layerById = new Map();
   let shapeEditFieldId = null;
   let shapeEditOriginal = null;
+  let shapeEditorStylePromise = null;
+  let shapeEditorScriptPromise = null;
 
   function loadState() {
     try {
@@ -163,9 +165,22 @@
     if(saveChanges){save();toast('Границы поля сохранены');}
     else toast('Изменение границ отменено');
   }
-  function beginShapeEdit() {
+  function loadShapeEditor(){
+    if(!shapeEditorStylePromise)shapeEditorStylePromise=new Promise((resolve,reject)=>{const link=document.createElement('link');link.rel='stylesheet';link.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css';link.crossOrigin='anonymous';link.referrerPolicy='no-referrer';link.onload=resolve;link.onerror=()=>{shapeEditorStylePromise=null;reject(new Error('Не удалось загрузить стили редактора границ'));};document.head.append(link);});
+    if(!window.L?.Draw&&!shapeEditorScriptPromise)shapeEditorScriptPromise=new Promise((resolve,reject)=>{const node=document.createElement('script');node.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js';node.crossOrigin='anonymous';node.referrerPolicy='no-referrer';node.onload=resolve;node.onerror=()=>{shapeEditorScriptPromise=null;reject(new Error('Не удалось загрузить редактор границ'));};document.head.append(node);});
+    return Promise.all([shapeEditorStylePromise,shapeEditorScriptPromise||Promise.resolve()]).then(()=>undefined);
+  }
+  async function beginShapeEdit() {
     const field=state.fields.find(item=>item.id===selectedId),layer=field&&layerById.get(field.id);
-    if(!field||!layer?.editing){toast('Не удалось включить редактирование этого поля');return;}
+    if(!field||!layer){toast('Не удалось открыть это поле для редактирования');return;}
+    if(!window.L?.Draw||!layer.editing){
+      $('edit-field-shape').disabled=true;
+      toast('Загружаю редактор границ');
+      try{await loadShapeEditor();}
+      catch(error){toast('Редактор границ не загрузился. Проверьте подключение.');return;}
+      finally{$('edit-field-shape').disabled=false;}
+    }
+    if(!layer.editing){toast('Не удалось включить редактирование этого поля');return;}
     shapeEditFieldId=field.id;
     shapeEditOriginal=JSON.parse(JSON.stringify(field.geometry));
     $('field-dialog').close();
